@@ -37,8 +37,7 @@ def main():
             'input_dim': (640, 640),
             'transforms': [
                 {'DetectionRandomAffine': {
-                    'degrees': 15,
-                    'scale': (0.8, 1.2)
+                    'degrees': 15
                 }}
             ]
         },
