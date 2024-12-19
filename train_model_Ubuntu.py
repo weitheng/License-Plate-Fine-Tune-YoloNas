@@ -35,12 +35,12 @@ def main():
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
             'transforms': [
-                {'DetectionHorizontalFlip': {'p': 0.5}},
-                {'DetectionRandomBrightness': {'brightness_limit': 0.2, 'p': 0.5}},
-                {'DetectionRandomContrast': {'contrast_limit': 0.2, 'p': 0.5}},
-                {'DetectionRandomRotate': {'angle_limit': 15, 'p': 0.5}},
-                {'DetectionMosaic': {'p': 0.5}},  # Especially useful for small objects
-                {'DetectionRandomScale': {'scale_limit': 0.2, 'p': 0.5}}
+                'DetectionHorizontalFlip',
+                {'DetectionRandomBrightness': {'brightness_limit': 0.2}},
+                {'DetectionRandomContrast': {'contrast_limit': 0.2}},
+                {'DetectionRandomRotate': {'angle_limit': 15}},
+                'DetectionMosaic',
+                {'DetectionRandomScale': {'scale_limit': 0.2}}
             ]
         },
         dataloader_params={
@@ -173,7 +173,7 @@ def main():
 
     # Save final model checkpoint
     final_checkpoint_path = os.path.join(checkpoint_dir, 'license_plate_detection_final.pth')
-    trainer.save_model(model, checkpoint_name=final_checkpoint_path)
+    trainer.save_checkpoint(model_state=model.state_dict(), optimizer_state=None, scheduler_state=None, checkpoint_path=final_checkpoint_path)
 
     # Generate label map file
     label_map_path = os.path.join(checkpoint_dir, 'label_map.txt')
