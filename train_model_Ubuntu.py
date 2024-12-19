@@ -36,16 +36,12 @@ def main():
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
             'transforms': [
-                {'DetectionHorizontalFlip': {}},  # This is the correct name from the list
-                {'DetectionHSV': {'saturation': 0.7, 'brightness': 0.4, 'hue': 0.015}},
-                {'DetectionRandomRotate90': {}},  # This is the correct name from the list
-                {'DetectionMosaic': {'input_dim': (640, 640)}},
-                {'DetectionRandomAffine': {
-                    'degrees': 15,
-                    'translate': 0.1,
-                    'scale': (0.8, 1.2),
-                    'input_dim': (640, 640)
-                }}
+                'DetectionMosaic',  # Try as simple string first
+                {
+                    'DetectionRandomAffine': {
+                        'input_dim': (640, 640)
+                    }
+                }
             ]
         },
         dataloader_params={
