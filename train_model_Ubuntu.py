@@ -90,8 +90,10 @@ def main():
         'warmup_initial_lr': 1e-6,
         'lr_warmup_epochs': 5,
         'initial_lr': 1e-4,
-        'lr_mode': 'cosine',
-        'cosine_final_lr_ratio': 0.01,
+        'lr_mode': 'one_cycle',  # Changed to one_cycle for OneCycleLR
+        'max_lr': 1e-4,  # Added for OneCycleLR
+        'dividing_factor': 10,  # Added for OneCycleLR
+#         'cosine_final_lr_ratio': 0.01,
         'optimizer': 'AdamW',
         'optimizer_params': {
             'weight_decay': 0.001
