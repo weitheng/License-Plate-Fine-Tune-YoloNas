@@ -14,7 +14,7 @@ def assess_hardware_capabilities() -> Dict[str, int]:
     """
     # Get CPU cores (physical cores * 0.5 for conservative performance)
     cpu_cores = multiprocessing.cpu_count()
-    recommended_workers = max(1, int(cpu_cores * 0.5))
+    recommended_workers = max(1, int(cpu_cores * 0.25))
 
     # Get available GPU memory
     if torch.cuda.is_available():
