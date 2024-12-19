@@ -49,7 +49,7 @@ def main():
             'data_dir': './',
             'images_dir': 'images/val',
             'labels_dir': 'labels/val',
-            'classes': dataset_config['names'], this line
+            'classes': dataset_config['names'],
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
@@ -150,7 +150,7 @@ def main():
     train_params.update({
         'dropout': 0.1,
         'mixed_precision': True,
-        'label_smoothing': 0.1,
+        'label_smoothing': 0.1
     })
     # Initialize trainer and start training
     trainer = Trainer(experiment_name='license_plate_detection',
