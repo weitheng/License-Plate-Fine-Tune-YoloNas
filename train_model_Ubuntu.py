@@ -33,7 +33,15 @@ def main():
             'data_dir': './',
             'images_dir': 'images/train',
             'labels_dir': 'labels/train',
-            'classes': dataset_config['names']
+            'classes': dataset_config['names'],
+            'transforms': [
+                {'DetectionHorizontalFlip': {'p': 0.5}},
+                {'DetectionRandomBrightness': {'brightness_limit': 0.2, 'p': 0.5}},
+                {'DetectionRandomContrast': {'contrast_limit': 0.2, 'p': 0.5}},
+                {'DetectionRandomRotate': {'angle_limit': 15, 'p': 0.5}},
+                {'DetectionMosaic': {'p': 0.5}},  # Especially useful for small objects
+                {'DetectionRandomScale': {'scale_limit': 0.2, 'p': 0.5}}
+            ]
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
@@ -84,12 +92,15 @@ def main():
         'average_best_models': True,
         'warmup_mode': 'LinearEpochLRWarmup',
         'warmup_initial_lr': 1e-6,
-        'lr_warmup_epochs': 3,
-        'initial_lr': 5e-4,
+        'lr_warmup_epochs': 5,  #Increase from 3
+        'initial_lr': 1e-4,  # Slightly lower learning rate
         'lr_mode': 'cosine',
         'cosine_final_lr_ratio': 0.01,
-        'optimizer': 'Adam',
-        'optimizer_params': {'weight_decay': 0.0001},
+        'optimizer': 'AdamW',  # Switch to AdamW from Adam
+        'optimizer_params': {
+            'weight_decay': 0.001,  # Increase weight decay
+            'momentum': 0.937,
+        },
         'zero_weight_decay_on_bias_and_bn': True,
         'ema': True,
         'ema_params': {
@@ -102,19 +113,23 @@ def main():
         'loss': PPYoloELoss(
             use_static_assigner=False,
             num_classes=len(dataset_config['names']),
-            reg_max=16
+            reg_max=16,
+            iou_loss_weight=3.0,  # Increase IOU loss weight
+            cls_loss_weight=1.0,
+            focal_loss_gamma=2.0,  # Add focal loss parameters
+            focal_loss_alpha=0.25
         ),
         'valid_metrics_list': [
-            DetectionMetrics_050(
-                score_thres=0.1,
-                top_k_predictions=300,
-                num_cls=len(dataset_config['names']),
-                normalize_targets=True,
-                post_prediction_callback=PPYoloEPostPredictionCallback(
-                    score_threshold=0.01,
-                    nms_threshold=0.7,
-                    nms_top_k=1000,
-                    max_predictions=300
+        DetectionMetrics_050(
+            score_thres=0.3,  # Increase confidence threshold
+            top_k_predictions=200,  # Reduce top k predictions
+            num_cls=len(dataset_config['names']),
+            normalize_targets=True,
+            post_prediction_callback=PPYoloEPostPredictionCallback(
+                score_threshold=0.3,  # Increase score threshold
+                nms_threshold=0.5,  # Stricter NMS
+                nms_top_k=500,
+                max_predictions=200
                 )
             )
         ],
@@ -128,7 +143,23 @@ def main():
             'run_name': 'yolo-nas-s-finetuning'
         }
     }
+    train_params['callback_kwargs'] = {
+        'early_stopping_patience': 5,
+        'monitor': 'val_precision_50',  # Monitor precision
+        'mode': 'max'
+    }
 
+    train_params['input_size_range'] = {
+        'min': 320,
+        'max': 640,
+        'step': 32
+    }
+
+    train_params.update({
+        'dropout': 0.1,
+        'mixed_precision': True,
+        'label_smoothing': 0.1,
+    })
     # Initialize trainer and start training
     trainer = Trainer(experiment_name='license_plate_detection',
                      ckpt_root_dir=checkpoint_dir)
