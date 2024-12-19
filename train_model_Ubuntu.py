@@ -97,8 +97,7 @@ def main():
         'cosine_final_lr_ratio': 0.01,
         'optimizer': 'AdamW',  # Switch to AdamW from Adam
         'optimizer_params': {
-            'weight_decay': 0.001,  # Increase weight decay
-            'momentum': 0.937,
+            'weight_decay': 0.001  # Increase weight decay
         },
         'zero_weight_decay_on_bias_and_bn': True,
         'ema': True,
