@@ -142,16 +142,6 @@ def main():
         'label_smoothing': 0.1
     }
 
-    # Scheduler integration
-    optimizer = torch.optim.AdamW(model.parameters(), lr=train_params['initial_lr'], weight_decay=0.001)
-    scheduler = OneCycleLR(
-        optimizer,
-        max_lr=train_params['initial_lr'],
-        steps_per_epoch=len(train_data),
-        epochs=train_params['max_epochs'],
-        pct_start=0.3
-    )
-
     # Initialize trainer and start training
     trainer = Trainer(experiment_name='license_plate_detection', ckpt_root_dir=checkpoint_dir)
 
