@@ -37,7 +37,6 @@ def main():
             'input_dim': (640, 640),
             'transforms': None  # Try with no transforms first
         },
-        },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
             'num_workers': 4,
