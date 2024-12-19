@@ -79,7 +79,7 @@ def main():
     train_params = {
         'save_ckpt_after_epoch': True,
         'save_ckpt_dir': checkpoint_dir,
-        'resume': True,
+        'resume': False,
         'silent_mode': False,
         'average_best_models': True,
         'warmup_mode': 'LinearEpochLRWarmup',
