@@ -37,11 +37,6 @@ def main():
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
-            'transforms': [
-                {'RandomHorizontalFlip': {'p': 0.5}},
-                {'RandomScale': {'scale_range': (0.8, 1.2)}},
-                {'RandomCrop': {'scale_range': (0.8, 1.0)}}
-            ]
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
