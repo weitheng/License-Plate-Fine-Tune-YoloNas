@@ -138,11 +138,11 @@ def main():
             'run_name': 'yolo-nas-s-finetuning'
         }
     }
-    train_params['callback_kwargs'] = {
-        'early_stopping_patience': 5,
-        'monitor': 'val_precision_50',  # Monitor precision
-        'mode': 'max'
-    }
+#     train_params['callback_kwargs'] = {
+#         'early_stopping_patience': 5,
+#         'monitor': 'val_precision_50',  # Monitor precision
+#         'mode': 'max'
+#     }
 
     train_params['input_size_range'] = {
         'min': 320,
