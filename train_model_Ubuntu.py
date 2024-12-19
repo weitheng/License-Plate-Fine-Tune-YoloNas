@@ -35,12 +35,12 @@ def main():
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
             'transforms': [
-                'DetectionHorizontalFlip',
-                {'DetectionRandomBrightness': {'brightness_limit': 0.2}},
-                {'DetectionRandomContrast': {'contrast_limit': 0.2}},
-                {'DetectionRandomRotate': {'angle_limit': 15}},
-                'DetectionMosaic',
-                {'DetectionRandomScale': {'scale_limit': 0.2}}
+                {'DetectionHorizontalFlip': {'prob': 0.5}},
+                {'DetectionRandomBrightness': {'brightness_limit': 0.2, 'prob': 0.5}},
+                {'DetectionRandomContrast': {'contrast_limit': 0.2, 'prob': 0.5}},
+                {'DetectionRandomRotate': {'angle_limit': 15, 'prob': 0.5}},
+                {'DetectionMosaic': {'prob': 0.5}},
+                {'DetectionRandomScale': {'scale_limit': 0.2, 'prob': 0.5}}
             ]
         },
         dataloader_params={
