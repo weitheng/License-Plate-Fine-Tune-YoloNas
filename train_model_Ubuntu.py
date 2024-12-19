@@ -108,7 +108,7 @@ def main():
             'decay_type': 'exp',
             'beta': 10
         },
-        'max_epochs': 40,
+        'max_epochs': 55,
         'early_stopping_patience': 5,
         'mixed_precision': torch.cuda.is_available(),
         'loss': PPYoloELoss(
