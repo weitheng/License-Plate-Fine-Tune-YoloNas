@@ -36,17 +36,16 @@ def main():
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
             'transforms': [
-                'DetectionHorizontalFlip',
-                'DetectionHSV',
-                'DetectionRandomRotate90',
-                'DetectionMosaic',
-                {
-                    'DetectionRandomAffine': {
-                        'scale': (0.8, 1.2),
-                        'degrees': 15,
-                        'translate': (0.1, 0.1)
-                    }
-                }
+                {'DetectionHFlip': {}},  # Changed from DetectionHorizontalFlip
+                {'DetectionHSV': {'saturation': 0.7, 'brightness': 0.4, 'hue': 0.015}},  # Modified parameters
+                {'DetectionRotate': {'prob': 0.5, 'max_degree': 90}},  # Changed from DetectionRandomRotate90
+                {'DetectionMosaic': {'input_dim': (640, 640)}},
+                {'DetectionRandomAffine': {
+                    'degrees': 15,
+                    'translate': 0.1,
+                    'scale': (0.8, 1.2),
+                    'input_dim': (640, 640)
+                }}
             ]
         },
         dataloader_params={
