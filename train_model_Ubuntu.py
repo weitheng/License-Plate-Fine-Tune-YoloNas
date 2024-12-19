@@ -21,7 +21,7 @@ def main():
     checkpoint_dir, export_dir = setup_directories("./")
 
     # Load dataset configuration
-    yaml_path = "license_plate.yaml"
+    yaml_path = "license_plate_dataset.yaml"
     dataset_config = load_dataset_config(yaml_path)
 
     # Get optimal hardware settings
