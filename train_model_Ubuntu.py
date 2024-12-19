@@ -144,15 +144,15 @@ def main():
         'mode': 'max'
     }
 
-    train_params['input_size_range'] = {
-        'min': 320,
-        'max': 640,
-        'step': 32
-    }
+#     train_params['input_size_range'] = {
+#         'min': 320,
+#         'max': 640,
+#         'step': 32
+#     }
 
     train_params.update({
         'dropout': 0.1,
-#         'mixed_precision': True,
+        'mixed_precision': True,
         'label_smoothing': 0.1
     })
     # Initialize trainer and start training
