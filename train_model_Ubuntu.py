@@ -36,11 +36,15 @@ def main():
             'classes': dataset_config['names'],
             'transforms': [
                 {'DetectionHorizontalFlip': {'prob': 0.5}},
-                {'DetectionRandomBrightness': {'brightness_limit': 0.2, 'prob': 0.5}},
-                {'DetectionRandomContrast': {'contrast_limit': 0.2, 'prob': 0.5}},
-                {'DetectionRandomRotate': {'angle_limit': 15, 'prob': 0.5}},
+                {'DetectionHSV': {'prob': 0.5, 'hgain': 0.015, 'sgain': 0.7, 'vgain': 0.4}},  # For brightness/contrast
+                {'DetectionRandomRotate90': {'prob': 0.5}},  # Instead of custom rotate
                 {'DetectionMosaic': {'prob': 0.5}},
-                {'DetectionRandomScale': {'scale_limit': 0.2, 'prob': 0.5}}
+                {'DetectionRandomAffine': {
+                    'prob': 0.5,
+                    'scale': (0.8, 1.2),  # Random scaling
+                    'degrees': 15,  # Random rotation
+                    'translate': (0.1, 0.1)  # Random translation
+                }}
             ]
         },
         dataloader_params={
