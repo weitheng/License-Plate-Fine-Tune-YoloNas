@@ -36,9 +36,9 @@ def main():
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
             'transforms': [
-                {'DetectionHFlip': {}},  # Changed from DetectionHorizontalFlip
-                {'DetectionHSV': {'saturation': 0.7, 'brightness': 0.4, 'hue': 0.015}},  # Modified parameters
-                {'DetectionRotate': {'prob': 0.5, 'max_degree': 90}},  # Changed from DetectionRandomRotate90
+                {'DetectionHorizontalFlip': {}},  # This is the correct name from the list
+                {'DetectionHSV': {'saturation': 0.7, 'brightness': 0.4, 'hue': 0.015}},
+                {'DetectionRandomRotate90': {}},  # This is the correct name from the list
                 {'DetectionMosaic': {'input_dim': (640, 640)}},
                 {'DetectionRandomAffine': {
                     'degrees': 15,
