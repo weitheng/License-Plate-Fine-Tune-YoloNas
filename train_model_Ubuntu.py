@@ -32,7 +32,7 @@ def main():
         dataset_params={
             'data_dir': './',
             'images_dir': 'images/train',
-            'labels_dir': 'labels/val',
+            'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
             'transforms': [
