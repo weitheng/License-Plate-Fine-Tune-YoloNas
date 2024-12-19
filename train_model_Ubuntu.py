@@ -34,16 +34,18 @@ def main():
             'images_dir': 'images/train',
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
+            'input_dim': (640, 640),  # Add this line - specify input dimensions
             'transforms': [
                 {'DetectionHorizontalFlip': {'prob': 0.5}},
-                {'DetectionHSV': {'prob': 0.5, 'hgain': 0.015, 'sgain': 0.7, 'vgain': 0.4}},  # For brightness/contrast
-                {'DetectionRandomRotate90': {'prob': 0.5}},  # Instead of custom rotate
-                {'DetectionMosaic': {'prob': 0.5}},
+                {'DetectionHSV': {'prob': 0.5, 'hgain': 0.015, 'sgain': 0.7, 'vgain': 0.4}},
+                {'DetectionRandomRotate90': {'prob': 0.5}},
+                {'DetectionMosaic': {'prob': 0.5, 'input_dim': (640, 640)}},  # Add input_dim here too
                 {'DetectionRandomAffine': {
                     'prob': 0.5,
-                    'scale': (0.8, 1.2),  # Random scaling
-                    'degrees': 15,  # Random rotation
-                    'translate': (0.1, 0.1)  # Random translation
+                    'scale': (0.8, 1.2),
+                    'degrees': 15,
+                    'translate': (0.1, 0.1),
+                    'input_dim': (640, 640)  # Add input_dim here too
                 }}
             ]
         },
@@ -61,7 +63,8 @@ def main():
             'data_dir': './',
             'images_dir': 'images/val',
             'labels_dir': 'labels/val',
-            'classes': dataset_config['names']
+            'classes': dataset_config['names'],
+            'input_dim': (640, 640)  # Add this line
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
