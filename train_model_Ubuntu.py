@@ -90,10 +90,10 @@ def main():
         'warmup_initial_lr': 1e-6,
         'lr_warmup_epochs': 5,
         'initial_lr': 1e-4,
-        'lr_mode': 'one_cycle',  # Changed to one_cycle for OneCycleLR
+        'lr_mode': 'cosine',  # Changed back to cosine
+        'cosine_final_lr_ratio': 0.1,
         'max_lr': 1e-4,  # Added for OneCycleLR
         'dividing_factor': 10,  # Added for OneCycleLR
-#         'cosine_final_lr_ratio': 0.01,
         'optimizer': 'AdamW',
         'optimizer_params': {
             'weight_decay': 0.001
@@ -105,7 +105,7 @@ def main():
             'decay_type': 'exp',
             'beta': 10
         },
-        'max_epochs': 55,
+        'max_epochs': 65,
         'early_stopping_patience': 5,
         'mixed_precision': torch.cuda.is_available(),
         'loss': PPYoloELoss(
