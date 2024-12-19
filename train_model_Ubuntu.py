@@ -30,22 +30,17 @@ def main():
     # Prepare dataloaders with optimized parameters
     train_data = coco_detection_yolo_format_train(
         dataset_params={
+        dataset_params={
             'data_dir': './',
             'images_dir': 'images/train',
-            'labels_dir': 'labels/train',
+            'labels_dir': 'labels/val',
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
             'transforms': [
-                {
-                    'DetectionMosaic': {
-                        'input_dim': (640, 640)
-                    }
-                },
-                {
-                    'DetectionRandomAffine': {
-                        'input_dim': (640, 640)
-                    }
-                }
+                {'DetectionRandomAffine': {
+                    'degrees': 15,
+                    'scale': (0.8, 1.2)
+                }}
             ]
         },
         dataloader_params={
