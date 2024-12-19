@@ -37,7 +37,7 @@ def main():
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
-            'num_workers': hw_params['num_workers'],
+            'num_workers': 4,
             'shuffle': True,
             'pin_memory': torch.cuda.is_available(),
             'drop_last': True  # Helps with batch normalization
@@ -53,7 +53,7 @@ def main():
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
-            'num_workers': hw_params['num_workers'],
+            'num_workers': 4,
             'shuffle': False,
             'pin_memory': torch.cuda.is_available(),
             'drop_last': False
