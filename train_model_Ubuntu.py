@@ -35,7 +35,18 @@ def main():
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
-            'transforms': None  # Try with no transforms first
+            'transforms': [
+                {
+                    'DetectionMosaic': {
+                        'input_dim': (640, 640)
+                    }
+                },
+                {
+                    'DetectionRandomAffine': {
+                        'input_dim': (640, 640)
+                    }
+                }
+            ]
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
