@@ -1,0 +1,8 @@
+{"time":"2024-12-19T17:22:34.928388272Z","level":"INFO","msg":"using version","core version":"0.19.1"}
+{"time":"2024-12-19T17:22:34.928425933Z","level":"INFO","msg":"created symlink","path":"/License-Plate-Fine-Tune-YoloNas/wandb/run-20241219_172234-yce6aqj5/logs/debug-core.log"}
+{"time":"2024-12-19T17:22:35.040847671Z","level":"INFO","msg":"created new stream","id":"yce6aqj5"}
+{"time":"2024-12-19T17:22:35.040908463Z","level":"INFO","msg":"stream: started","id":"yce6aqj5"}
+{"time":"2024-12-19T17:22:35.040991476Z","level":"INFO","msg":"writer: Do: started","stream_id":"yce6aqj5"}
+{"time":"2024-12-19T17:22:35.041026097Z","level":"INFO","msg":"handler: started","stream_id":"yce6aqj5"}
+{"time":"2024-12-19T17:22:35.041147411Z","level":"INFO","msg":"sender: started","stream_id":"yce6aqj5"}
+{"time":"2024-12-19T17:22:35.350349756Z","level":"INFO","msg":"Starting system monitor"}

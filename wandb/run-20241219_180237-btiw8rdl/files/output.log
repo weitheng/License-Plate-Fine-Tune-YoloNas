@@ -1,0 +1,103 @@
+Indexing dataset annotations: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 25470/25470 [00:03<00:00, 7273.27it/s]
+Indexing dataset annotations: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1073/1073 [00:00<00:00, 7337.54it/s]
+Fixing model download URLs...
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py:186: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  state_dict = torch.load(ckpt_path, map_location=device)
+The console stream is now moved to /License-Plate-Fine-Tune-YoloNas/checkpoints/license_plate_detection/RUN_20241219_173952_828490/console_Dec19_18_02_45.txt
+[2024-12-19 18:02:45] WARNING - wandb_sg_logger.py - A Weights & Biases run was initialized before initializing `WandBSGLogger`. This means that `super-gradients` cannot control the run ID to which this session will be logged.
+[2024-12-19 18:02:45] WARNING - wandb_sg_logger.py - In order to resume this run please call `wandb.init(id=btiw8rdl, resume='must')` before reinitializing `WandBSGLogger`.
+[2024-12-19 18:02:45] INFO - sg_trainer.py - Using EMA with params {'decay': 0.9995, 'decay_type': 'exp', 'beta': 10}
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:1753: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = GradScaler(enabled=mixed_precision_enabled)
+[2024-12-19 18:02:51] INFO - sg_trainer_utils.py - TRAINING PARAMETERS:
+    - Mode:                         Single GPU
+    - Number of GPUs:               1          (1 available on the machine)
+    - Full dataset size:            25452      (len(train_set))
+    - Batch size per GPU:           32         (batch_size)
+    - Batch Accumulate:             1          (batch_accumulate)
+    - Total batch size:             32         (num_gpus * batch_size)
+    - Effective Batch size:         32         (num_gpus * batch_size * batch_accumulate)
+    - Iterations per epoch:         795        (len(train_loader))
+    - Gradient updates per epoch:   795        (len(train_loader) / batch_accumulate)
+    - Model: YoloNAS_S  (19.02M parameters, 19.02M optimized)
+    - Learning Rates and Weight Decays:
+      - default: (19.02M parameters). LR: 4.06e-05 (19.02M parameters) WD: 0.0, (42.13K parameters), WD: 0.001, (18.98M parameters)
+
+[2024-12-19 18:02:51] INFO - sg_trainer.py - Couldn't fetch mAP@0.50 from the checkpoint.
+ Running test on the validation data before resuming training...
+Testing: 100%|██████████| 34/34 [00:09<00:00,  3.49it/s]
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/weight_averaging_utils.py:132: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  return torch.load(self.averaging_snapshots_file, map_location="cpu")
+[2024-12-19 18:03:04] INFO - sg_trainer.py - Started training for 47 epochs (3/49)
+
+Train epoch 3:   0%|          | 0/795 [00:00<?, ?it/s]/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:502: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast(enabled=self.training_params.mixed_precision):
+Train epoch 3: 100%|██████████| 795/795 [04:05<00:00,  3.24it/s, PPYoloELoss/loss=1.98, PPYoloELoss/loss_cls=0.794, PPYoloELoss/loss_dfl=0.499, PPYoloELoss/loss_iou=0.683, gpu_mem=12.5]
+Validating epoch 3: 100%|██████████| 34/34 [00:07<00:00,  4.73it/s]
+===========================================================
+SUMMARY OF EPOCH 3
+├── Train
+│   ├── Ppyoloeloss/loss_cls = 0.7942
+│   ├── Ppyoloeloss/loss_iou = 0.6831
+│   ├── Ppyoloeloss/loss_dfl = 0.4989
+│   └── Ppyoloeloss/loss = 1.9762
+└── Validation
+    ├── Ppyoloeloss/loss_cls = 1.3531
+    ├── Ppyoloeloss/loss_iou = 0.9983
+    ├── Ppyoloeloss/loss_dfl = 0.6058
+    ├── Ppyoloeloss/loss = 2.9572
+    ├── Precision@0.50 = 0.1214
+    ├── Recall@0.50 = 0.3147
+    ├── Map@0.50 = 0.1455
+    ├── F1@0.50 = 0.1752
+    └── Best_score_threshold = 0.48
+
+===========================================================
+Train epoch 4: 100%|██████████| 795/795 [04:04<00:00,  3.25it/s, PPYoloELoss/loss=1.88, PPYoloELoss/loss_cls=0.789, PPYoloELoss/loss_dfl=0.456, PPYoloELoss/loss_iou=0.633, gpu_mem=13.2]
+Validating epoch 4: 100%|██████████| 34/34 [00:07<00:00,  4.64it/s]
+===========================================================
+SUMMARY OF EPOCH 4
+├── Train
+│   ├── Ppyoloeloss/loss_cls = 0.7888
+│   │   ├── Epoch N-1      = 0.7942 ([32m↘ -0.0053[0m)
+│   │   └── Best until now = 0.7942 ([32m↘ -0.0053[0m)
+│   ├── Ppyoloeloss/loss_iou = 0.6329
+│   │   ├── Epoch N-1      = 0.6831 ([32m↘ -0.0503[0m)
+│   │   └── Best until now = 0.6831 ([32m↘ -0.0503[0m)
+│   ├── Ppyoloeloss/loss_dfl = 0.4558
+│   │   ├── Epoch N-1      = 0.4989 ([32m↘ -0.0431[0m)
+│   │   └── Best until now = 0.4989 ([32m↘ -0.0431[0m)
+│   └── Ppyoloeloss/loss = 1.8775
+│       ├── Epoch N-1      = 1.9762 ([32m↘ -0.0987[0m)
+│       └── Best until now = 1.9762 ([32m↘ -0.0987[0m)
+└── Validation
+    ├── Ppyoloeloss/loss_cls = 1.2256
+    │   ├── Epoch N-1      = 1.3531 ([32m↘ -0.1275[0m)
+    │   └── Best until now = 1.3531 ([32m↘ -0.1275[0m)
+    ├── Ppyoloeloss/loss_iou = 0.919
+    │   ├── Epoch N-1      = 0.9983 ([32m↘ -0.0793[0m)
+    │   └── Best until now = 0.9983 ([32m↘ -0.0793[0m)
+    ├── Ppyoloeloss/loss_dfl = 0.5548
+    │   ├── Epoch N-1      = 0.6058 ([32m↘ -0.051[0m)
+    │   └── Best until now = 0.6058 ([32m↘ -0.051[0m)
+    ├── Ppyoloeloss/loss = 2.6994
+    │   ├── Epoch N-1      = 2.9572 ([32m↘ -0.2578[0m)
+    │   └── Best until now = 2.9572 ([32m↘ -0.2578[0m)
+    ├── Precision@0.50 = 0.1726
+    │   ├── Epoch N-1      = 0.1214 ([32m↗ 0.0512[0m)
+    │   └── Best until now = 0.1214 ([32m↗ 0.0512[0m)
+    ├── Recall@0.50 = 0.4081
+    │   ├── Epoch N-1      = 0.3147 ([32m↗ 0.0935[0m)
+    │   └── Best until now = 0.3147 ([32m↗ 0.0935[0m)
+    ├── Map@0.50 = 0.2397
+    │   ├── Epoch N-1      = 0.1455 ([32m↗ 0.0942[0m)
+    │   └── Best until now = 0.1455 ([32m↗ 0.0942[0m)
+    ├── F1@0.50 = 0.2426
+    │   ├── Epoch N-1      = 0.1752 ([32m↗ 0.0674[0m)
+    │   └── Best until now = 0.1752 ([32m↗ 0.0674[0m)
+    └── Best_score_threshold = 0.5
+        ├── Epoch N-1      = 0.48   (↗ 0.02[0m)
+        └── Best until now = 0.48   (↗ 0.02[0m)
+
+===========================================================
+Train epoch 5:  15%|█▍        | 118/795 [00:35<03:11,  3.54it/s, PPYoloELoss/loss=1.86, PPYoloELoss/loss_cls=0.794, PPYoloELoss/loss_dfl=0.443, PPYoloELoss/loss_iou=0.618, gpu_mem=11.5]

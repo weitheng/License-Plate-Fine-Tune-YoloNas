@@ -1,0 +1,28 @@
+Indexing dataset annotations: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 25470/25470 [00:03<00:00, 7269.28it/s]
+Indexing dataset annotations: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1073/1073 [00:00<00:00, 7406.33it/s]
+Fixing model download URLs...
+The console stream is now moved to /License-Plate-Fine-Tune-YoloNas/checkpoints/license_plate_detection/RUN_20241219_172528_272223/console_Dec19_17_25_28.txt
+[2024-12-19 17:25:28] WARNING - wandb_sg_logger.py - A Weights & Biases run was initialized before initializing `WandBSGLogger`. This means that `super-gradients` cannot control the run ID to which this session will be logged.
+[2024-12-19 17:25:28] WARNING - wandb_sg_logger.py - In order to resume this run please call `wandb.init(id=w8zib5ul, resume='must')` before reinitializing `WandBSGLogger`.
+[2024-12-19 17:25:28] INFO - sg_trainer.py - Using EMA with params {'decay': 0.9995, 'decay_type': 'exp', 'beta': 10}
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:1753: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = GradScaler(enabled=mixed_precision_enabled)
+[2024-12-19 17:25:31] INFO - sg_trainer_utils.py - TRAINING PARAMETERS:
+    - Mode:                         Single GPU
+    - Number of GPUs:               1          (1 available on the machine)
+    - Full dataset size:            25452      (len(train_set))
+    - Batch size per GPU:           32         (batch_size)
+    - Batch Accumulate:             1          (batch_accumulate)
+    - Total batch size:             32         (num_gpus * batch_size)
+    - Effective Batch size:         32         (num_gpus * batch_size * batch_accumulate)
+    - Iterations per epoch:         795        (len(train_loader))
+    - Gradient updates per epoch:   795        (len(train_loader) / batch_accumulate)
+    - Model: YoloNAS_S  (19.02M parameters, 19.02M optimized)
+    - Learning Rates and Weight Decays:
+      - default: (19.02M parameters). LR: 0.0001 (19.02M parameters) WD: 0.0, (42.13K parameters), WD: 0.001, (18.98M parameters)
+
+[2024-12-19 17:25:31] INFO - sg_trainer.py - Started training for 50 epochs (0/49)
+
+Train epoch 0:   0%|          | 0/795 [00:00<?, ?it/s]/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:502: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast(enabled=self.training_params.mixed_precision):
+Train epoch 0:   0%|          | 0/795 [00:03<?, ?it/s]

@@ -1,0 +1,42 @@
+{
+  "os":  "Linux-6.5.0-35-generic-x86_64-with-glibc2.29",
+  "python":  "CPython 3.8.10",
+  "startedAt":  "2024-12-19T17:33:55.315030Z",
+  "program":  "train_model_Ubuntu.py",
+  "codePath":  "train_model_Ubuntu.py",
+  "git":  {
+    "remote":  "https://github.com/weitheng/License-Plate-Fine-Tune-YoloNas.git",
+    "commit":  "738506163b5c8c31c65c92961462c65231c399a8"
+  },
+  "email":  "02-six-unmet@icloud.com",
+  "root":  "/License-Plate-Fine-Tune-YoloNas",
+  "host":  "536c565e0d80",
+  "executable":  "/usr/bin/python3",
+  "codePathLocal":  "train_model_Ubuntu.py",
+  "cpu_count":  48,
+  "cpu_count_logical":  96,
+  "gpu":  "NVIDIA GeForce RTX 4090",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "42949672960",
+      "used":  "16400863232"
+    }
+  },
+  "memory":  {
+    "total":  "270080077824"
+  },
+  "cpu":  {
+    "count":  48,
+    "countLogical":  96
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4090",
+      "memoryTotal":  "25757220864",
+      "cudaCores":  16384,
+      "architecture":  "Ada"
+    }
+  ],
+  "cudaVersion":  "12.4"
+}

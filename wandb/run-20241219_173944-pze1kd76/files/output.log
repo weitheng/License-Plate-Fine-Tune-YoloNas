@@ -1,0 +1,148 @@
+Indexing dataset annotations: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 25470/25470 [00:03<00:00, 7403.16it/s]
+Indexing dataset annotations: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1073/1073 [00:00<00:00, 7389.43it/s]
+Fixing model download URLs...
+The console stream is now moved to /License-Plate-Fine-Tune-YoloNas/checkpoints/license_plate_detection/RUN_20241219_173952_828490/console_Dec19_17_39_52.txt
+[2024-12-19 17:39:52] WARNING - wandb_sg_logger.py - A Weights & Biases run was initialized before initializing `WandBSGLogger`. This means that `super-gradients` cannot control the run ID to which this session will be logged.
+[2024-12-19 17:39:52] WARNING - wandb_sg_logger.py - In order to resume this run please call `wandb.init(id=pze1kd76, resume='must')` before reinitializing `WandBSGLogger`.
+[2024-12-19 17:39:52] INFO - sg_trainer.py - Using EMA with params {'decay': 0.9995, 'decay_type': 'exp', 'beta': 10}
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:1753: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = GradScaler(enabled=mixed_precision_enabled)
+[2024-12-19 17:39:57] INFO - sg_trainer_utils.py - TRAINING PARAMETERS:
+    - Mode:                         Single GPU
+    - Number of GPUs:               1          (1 available on the machine)
+    - Full dataset size:            25452      (len(train_set))
+    - Batch size per GPU:           32         (batch_size)
+    - Batch Accumulate:             1          (batch_accumulate)
+    - Total batch size:             32         (num_gpus * batch_size)
+    - Effective Batch size:         32         (num_gpus * batch_size * batch_accumulate)
+    - Iterations per epoch:         795        (len(train_loader))
+    - Gradient updates per epoch:   795        (len(train_loader) / batch_accumulate)
+    - Model: YoloNAS_S  (19.02M parameters, 19.02M optimized)
+    - Learning Rates and Weight Decays:
+      - default: (19.02M parameters). LR: 0.0001 (19.02M parameters) WD: 0.0, (42.13K parameters), WD: 0.001, (18.98M parameters)
+
+[2024-12-19 17:39:57] INFO - sg_trainer.py - Started training for 50 epochs (0/49)
+
+Train epoch 0:   0%|          | 0/795 [00:00<?, ?it/s]/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:502: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast(enabled=self.training_params.mixed_precision):
+Train epoch 0: 100%|██████████| 795/795 [04:09<00:00,  3.18it/s, PPYoloELoss/loss=4.55, PPYoloELoss/loss_cls=1.56, PPYoloELoss/loss_dfl=1.45, PPYoloELoss/loss_iou=1.55, gpu_mem=12.4]
+Validating: 100%|██████████| 34/34 [00:06<00:00,  4.86it/s]
+[2024-12-19 17:44:17] INFO - sg_trainer.py - Best checkpoint overriden: validation mAP@0.50: 7.87256212788634e-05
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/weight_averaging_utils.py:132: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  return torch.load(self.averaging_snapshots_file, map_location="cpu")
+===========================================================
+SUMMARY OF EPOCH 0
+├── Train
+│   ├── Ppyoloeloss/loss_cls = 1.5623
+│   ├── Ppyoloeloss/loss_iou = 1.5459
+│   ├── Ppyoloeloss/loss_dfl = 1.4456
+│   └── Ppyoloeloss/loss = 4.5537
+└── Validation
+    ├── Ppyoloeloss/loss_cls = 3.8664
+    ├── Ppyoloeloss/loss_iou = 1.8854
+    ├── Ppyoloeloss/loss_dfl = 1.8141
+    ├── Ppyoloeloss/loss = 7.5659
+    ├── Precision@0.50 = 0.0024
+    ├── Recall@0.50 = 0.0127
+    ├── Map@0.50 = 0.0001
+    ├── F1@0.50 = 0.004
+    └── Best_score_threshold = 0.32
+
+===========================================================
+Train epoch 1: 100%|██████████| 795/795 [04:20<00:00,  3.05it/s, PPYoloELoss/loss=3.43, PPYoloELoss/loss_cls=1.03, PPYoloELoss/loss_dfl=1.13, PPYoloELoss/loss_iou=1.27, gpu_mem=13.1]
+Validating epoch 1: 100%|██████████| 34/34 [00:07<00:00,  4.80it/s]
+[2024-12-19 17:48:48] INFO - sg_trainer.py - Best checkpoint overriden: validation mAP@0.50: 0.010652394965291023
+===========================================================
+SUMMARY OF EPOCH 1
+├── Train
+│   ├── Ppyoloeloss/loss_cls = 1.0271
+│   │   ├── Epoch N-1      = 1.5623 ([32m↘ -0.5352[0m)
+│   │   └── Best until now = 1.5623 ([32m↘ -0.5352[0m)
+│   ├── Ppyoloeloss/loss_iou = 1.2742
+│   │   ├── Epoch N-1      = 1.5459 ([32m↘ -0.2717[0m)
+│   │   └── Best until now = 1.5459 ([32m↘ -0.2717[0m)
+│   ├── Ppyoloeloss/loss_dfl = 1.1331
+│   │   ├── Epoch N-1      = 1.4456 ([32m↘ -0.3125[0m)
+│   │   └── Best until now = 1.4456 ([32m↘ -0.3125[0m)
+│   └── Ppyoloeloss/loss = 3.4344
+│       ├── Epoch N-1      = 4.5537 ([32m↘ -1.1193[0m)
+│       └── Best until now = 4.5537 ([32m↘ -1.1193[0m)
+└── Validation
+    ├── Ppyoloeloss/loss_cls = 2.4007
+    │   ├── Epoch N-1      = 3.8664 ([32m↘ -1.4657[0m)
+    │   └── Best until now = 3.8664 ([32m↘ -1.4657[0m)
+    ├── Ppyoloeloss/loss_iou = 1.3806
+    │   ├── Epoch N-1      = 1.8854 ([32m↘ -0.5048[0m)
+    │   └── Best until now = 1.8854 ([32m↘ -0.5048[0m)
+    ├── Ppyoloeloss/loss_dfl = 1.0622
+    │   ├── Epoch N-1      = 1.8141 ([32m↘ -0.7519[0m)
+    │   └── Best until now = 1.8141 ([32m↘ -0.7519[0m)
+    ├── Ppyoloeloss/loss = 4.8436
+    │   ├── Epoch N-1      = 7.5659 ([32m↘ -2.7224[0m)
+    │   └── Best until now = 7.5659 ([32m↘ -2.7224[0m)
+    ├── Precision@0.50 = 0.0293
+    │   ├── Epoch N-1      = 0.0024 ([32m↗ 0.0269[0m)
+    │   └── Best until now = 0.0024 ([32m↗ 0.0269[0m)
+    ├── Recall@0.50 = 0.1233
+    │   ├── Epoch N-1      = 0.0127 ([32m↗ 0.1106[0m)
+    │   └── Best until now = 0.0127 ([32m↗ 0.1106[0m)
+    ├── Map@0.50 = 0.0107
+    │   ├── Epoch N-1      = 0.0001 ([32m↗ 0.0106[0m)
+    │   └── Best until now = 0.0001 ([32m↗ 0.0106[0m)
+    ├── F1@0.50 = 0.0474
+    │   ├── Epoch N-1      = 0.004  ([32m↗ 0.0433[0m)
+    │   └── Best until now = 0.004  ([32m↗ 0.0433[0m)
+    └── Best_score_threshold = 0.49
+        ├── Epoch N-1      = 0.32   (↗ 0.17[0m)
+        └── Best until now = 0.32   (↗ 0.17[0m)
+
+===========================================================
+Train epoch 2: 100%|██████████| 795/795 [04:19<00:00,  3.06it/s, PPYoloELoss/loss=2.3, PPYoloELoss/loss_cls=0.839, PPYoloELoss/loss_dfl=0.638, PPYoloELoss/loss_iou=0.825, gpu_mem=12.2] 
+Validating epoch 2: 100%|██████████| 34/34 [00:07<00:00,  4.74it/s]
+[2024-12-19 17:53:19] INFO - sg_trainer.py - Best checkpoint overriden: validation mAP@0.50: 0.08296404033899307
+===========================================================
+SUMMARY OF EPOCH 2
+├── Train
+│   ├── Ppyoloeloss/loss_cls = 0.8395
+│   │   ├── Epoch N-1      = 1.0271 ([32m↘ -0.1876[0m)
+│   │   └── Best until now = 1.0271 ([32m↘ -0.1876[0m)
+│   ├── Ppyoloeloss/loss_iou = 0.8253
+│   │   ├── Epoch N-1      = 1.2742 ([32m↘ -0.4488[0m)
+│   │   └── Best until now = 1.2742 ([32m↘ -0.4488[0m)
+│   ├── Ppyoloeloss/loss_dfl = 0.6381
+│   │   ├── Epoch N-1      = 1.1331 ([32m↘ -0.495[0m)
+│   │   └── Best until now = 1.1331 ([32m↘ -0.495[0m)
+│   └── Ppyoloeloss/loss = 2.303
+│       ├── Epoch N-1      = 3.4344 ([32m↘ -1.1314[0m)
+│       └── Best until now = 3.4344 ([32m↘ -1.1314[0m)
+└── Validation
+    ├── Ppyoloeloss/loss_cls = 1.3741
+    │   ├── Epoch N-1      = 2.4007 ([32m↘ -1.0266[0m)
+    │   └── Best until now = 2.4007 ([32m↘ -1.0266[0m)
+    ├── Ppyoloeloss/loss_iou = 1.1089
+    │   ├── Epoch N-1      = 1.3806 ([32m↘ -0.2718[0m)
+    │   └── Best until now = 1.3806 ([32m↘ -0.2718[0m)
+    ├── Ppyoloeloss/loss_dfl = 0.7383
+    │   ├── Epoch N-1      = 1.0622 ([32m↘ -0.3239[0m)
+    │   └── Best until now = 1.0622 ([32m↘ -0.3239[0m)
+    ├── Ppyoloeloss/loss = 3.2213
+    │   ├── Epoch N-1      = 4.8436 ([32m↘ -1.6223[0m)
+    │   └── Best until now = 4.8436 ([32m↘ -1.6223[0m)
+    ├── Precision@0.50 = 0.1004
+    │   ├── Epoch N-1      = 0.0293 ([32m↗ 0.071[0m)
+    │   └── Best until now = 0.0293 ([32m↗ 0.071[0m)
+    ├── Recall@0.50 = 0.2295
+    │   ├── Epoch N-1      = 0.1233 ([32m↗ 0.1062[0m)
+    │   └── Best until now = 0.1233 ([32m↗ 0.1062[0m)
+    ├── Map@0.50 = 0.083
+    │   ├── Epoch N-1      = 0.0107 ([32m↗ 0.0723[0m)
+    │   └── Best until now = 0.0107 ([32m↗ 0.0723[0m)
+    ├── F1@0.50 = 0.1397
+    │   ├── Epoch N-1      = 0.0474 ([32m↗ 0.0923[0m)
+    │   └── Best until now = 0.0474 ([32m↗ 0.0923[0m)
+    └── Best_score_threshold = 0.46
+        ├── Epoch N-1      = 0.49   (↘ -0.03[0m)
+        └── Best until now = 0.32   (↗ 0.14[0m)
+
+===========================================================
+Train epoch 3:  52%|█████▏    | 415/795 [02:08<01:58,  3.21it/s, PPYoloELoss/loss=2.02, PPYoloELoss/loss_cls=0.801, PPYoloELoss/loss_dfl=0.515, PPYoloELoss/loss_iou=0.702, gpu_mem=12.5]

@@ -1,0 +1,390 @@
+_wandb:
+    value:
+        cli_version: 0.19.1
+        m: []
+        python_version: 3.8.10
+        t:
+            "1":
+                - 1
+                - 41
+                - 50
+                - 55
+                - 80
+            "2":
+                - 1
+                - 41
+                - 50
+                - 55
+                - 80
+            "3":
+                - 2
+                - 3
+                - 13
+                - 23
+                - 55
+                - 61
+            "4": 3.8.10
+            "5": 0.19.1
+            "8":
+                - 5
+            "12": 0.19.1
+            "13": linux-x86_64
+additional_log_items:
+    value:
+        device_type: NVIDIA GeForce RTX 4090
+        initial_LR: 0.0001
+        installed_packages:
+            absl-py: 2.1.0
+            alabaster: 0.7.13
+            albucore: 0.0.17
+            albumentations: 1.4.18
+            annotated-types: 0.7.0
+            antlr4-python3-runtime: 4.9.3
+            arabic-reshaper: 3.0.0
+            asn1crypto: 1.5.1
+            attrs: 24.3.0
+            autocommand: 2.2.2
+            babel: 2.16.0
+            backports.tarfile: 1.2.0
+            backports.zoneinfo: 0.2.1
+            boto3: 1.35.84
+            botocore: 1.35.84
+            build: 1.2.2.post1
+            cachetools: 5.5.0
+            certifi: 2019.11.28
+            cffi: 1.17.1
+            chardet: 3.0.4
+            charset-normalizer: 3.4.0
+            click: 8.1.7
+            coloredlogs: 15.0.1
+            contourpy: 1.1.1
+            coverage: 5.3.1
+            cryptography: 44.0.0
+            cssselect2: 0.7.0
+            cycler: 0.12.1
+            data-gradients: 0.3.2
+            dbus-python: 1.2.16
+            deprecated: 1.2.15
+            distro: 1.4.0
+            docker-pycreds: 0.4.0
+            docutils: 0.20.1
+            einops: 0.3.2
+            eval-type-backport: 0.2.0
+            filelock: 3.16.1
+            flatbuffers: 24.3.25
+            fonttools: 4.55.3
+            fsspec: 2024.10.0
+            future: 1.0.0
+            gitdb: 4.0.11
+            gitpython: 3.1.43
+            google-auth: 2.37.0
+            google-auth-oauthlib: 1.0.0
+            grpcio: 1.68.1
+            html5lib: "1.1"
+            humanfriendly: "10.0"
+            hydra-core: 1.3.2
+            idna: "2.8"
+            imagededup: 0.3.2
+            imageio: 2.35.1
+            imagesize: 1.4.1
+            importlib-metadata: 8.5.0
+            importlib-resources: 6.4.5
+            inflect: 7.3.1
+            jaraco.collections: 5.1.0
+            jaraco.context: 5.3.0
+            jaraco.functools: 4.0.1
+            jaraco.text: 3.12.1
+            jinja2: 3.1.4
+            jmespath: 1.0.1
+            joblib: 1.4.2
+            json-tricks: 3.16.1
+            jsonschema: 4.23.0
+            jsonschema-specifications: 2023.12.1
+            kiwisolver: 1.4.7
+            lazy-loader: "0.4"
+            lxml: 5.3.0
+            markdown: "3.7"
+            markdown-it-py: 3.0.0
+            markupsafe: 2.1.5
+            matplotlib: 3.7.5
+            mdurl: 0.1.2
+            more-itertools: 10.3.0
+            mpmath: 1.3.0
+            networkx: "3.1"
+            numpy: 1.23.0
+            nvidia-cublas-cu12: 12.1.3.1
+            nvidia-cuda-cupti-cu12: 12.1.105
+            nvidia-cuda-nvrtc-cu12: 12.1.105
+            nvidia-cuda-runtime-cu12: 12.1.105
+            nvidia-cudnn-cu12: 9.1.0.70
+            nvidia-cufft-cu12: 11.0.2.54
+            nvidia-curand-cu12: 10.3.2.106
+            nvidia-cusolver-cu12: 11.4.5.107
+            nvidia-cusparse-cu12: 12.1.0.106
+            nvidia-nccl-cu12: 2.20.5
+            nvidia-nvjitlink-cu12: 12.6.85
+            nvidia-nvtx-cu12: 12.1.105
+            oauthlib: 3.2.2
+            omegaconf: 2.3.0
+            onnx: 1.15.0
+            onnxruntime: 1.15.0
+            onnxsim: 0.4.36
+            opencv-python: 4.10.0.84
+            opencv-python-headless: 4.10.0.84
+            oscrypto: 1.3.0
+            packaging: "24.2"
+            pandas: 2.0.3
+            pillow: 10.4.0
+            pip: 24.3.1
+            pip-tools: 7.4.1
+            pkgutil-resolve-name: 1.3.10
+            platformdirs: 4.3.6
+            protobuf: 3.20.3
+            psutil: 6.1.0
+            py-cpuinfo: 9.0.0
+            pyasn1: 0.6.1
+            pyasn1-modules: 0.4.1
+            pycocotools: 2.0.7
+            pycparser: "2.22"
+            pydantic: 2.10.4
+            pydantic-core: 2.27.2
+            pydeprecate: 0.3.2
+            pygments: 2.18.0
+            pygobject: 3.36.0
+            pyhanko: 0.25.3
+            pyhanko-certvalidator: 0.26.5
+            pyparsing: 3.1.4
+            pypdf: 5.1.0
+            pypng: 0.20220715.0
+            pyproject-hooks: 1.2.0
+            python-bidi: 0.6.3
+            python-dateutil: 2.9.0.post0
+            pytz: "2024.2"
+            pywavelets: 1.4.1
+            pyyaml: 6.0.2
+            qrcode: 7.4.2
+            rapidfuzz: 3.9.7
+            referencing: 0.35.1
+            reportlab: 3.6.13
+            requests: 2.32.3
+            requests-oauthlib: 2.0.0
+            rich: 13.9.4
+            rpds-py: 0.20.1
+            rsa: "4.9"
+            s3transfer: 0.10.4
+            scikit-image: 0.21.0
+            scikit-learn: 1.3.2
+            scipy: 1.10.1
+            seaborn: 0.13.2
+            sentry-sdk: 2.19.2
+            setproctitle: 1.3.4
+            setuptools: 75.3.0
+            six: 1.14.0
+            smmap: 5.0.1
+            snowballstemmer: 2.2.0
+            sphinx: 4.0.3
+            sphinx-rtd-theme: 3.0.2
+            sphinxcontrib-applehelp: 1.0.4
+            sphinxcontrib-devhelp: 1.0.2
+            sphinxcontrib-htmlhelp: 2.0.1
+            sphinxcontrib-jquery: "4.1"
+            sphinxcontrib-jsmath: 1.0.1
+            sphinxcontrib-qthelp: 1.0.3
+            sphinxcontrib-serializinghtml: 1.1.5
+            ssh-import-id: "5.10"
+            stringcase: 1.2.0
+            super-gradients: 3.7.1
+            svglib: 1.5.1
+            sympy: 1.13.3
+            tensorboard: 2.14.0
+            tensorboard-data-server: 0.7.2
+            termcolor: 1.1.0
+            threadpoolctl: 3.5.0
+            tifffile: 2023.7.10
+            tinycss2: 1.4.0
+            tomli: 2.2.1
+            torch: 2.4.1
+            torchmetrics: 0.8.0
+            torchvision: 0.19.1
+            tqdm: 4.67.1
+            treelib: 1.6.1
+            triton: 3.0.0
+            typeguard: 4.3.0
+            typing-extensions: 4.12.2
+            tzdata: "2024.2"
+            tzlocal: "5.2"
+            ultralytics: 8.3.51
+            ultralytics-thop: 2.0.13
+            uritools: 4.0.3
+            urllib3: 1.25.8
+            wandb: 0.19.1
+            webencodings: 0.5.1
+            werkzeug: 3.0.6
+            wheel: 0.45.1
+            wrapt: 1.17.0
+            xhtml2pdf: 0.2.11
+            zipp: 3.20.2
+        multi_gpu: None
+        num_devices: 1
+checkpoint_params:
+    value:
+        load_checkpoint: true
+        schema: null
+dataset_params:
+    value:
+        train_dataloader_params:
+            batch_size: 32
+            collate_fn: <super_gradients.training.utils.collate_fn.detection_collate_fn.DetectionCollateFN object at 0x74003d5e2fa0>
+            drop_last: true
+            num_workers: 4
+            pin_memory: true
+            shuffle: true
+        train_dataset_params: '{''data_dir'': ''./'', ''images_dir'': ''images/train'', ''labels_dir'': ''labels/train'', ''classes'': [''class_0''], ''input_dim'': [640, 640], ''cache_annotations'': True, ''ignore_empty_annotations'': True, ''transforms'': [{''DetectionMosaic'': {''input_dim'': [640, 640], ''prob'': 1.0}}, {''DetectionRandomAffine'': {''degrees'': 10.0, ''translate'': 0.1, ''scales'': [0.1, 2], ''shear'': 2.0, ''target_size'': [640, 640], ''filter_box_candidates'': True, ''wh_thr'': 2, ''area_thr'': 0.1, ''ar_thr'': 20}}, {''DetectionMixup'': {''input_dim'': [640, 640], ''mixup_scale'': [0.5, 1.5], ''prob'': 1.0, ''flip_prob'': 0.5}}, {''DetectionHSV'': {''prob'': 1.0, ''hgain'': 5, ''sgain'': 30, ''vgain'': 30}}, {''DetectionHorizontalFlip'': {''prob'': 0.5}}, {''DetectionPaddedRescale'': {''input_dim'': [640, 640]}}, {''DetectionTargetsFormatTransform'': {''input_dim'': [640, 640], ''output_format'': ''LABEL_CXCYWH''}}], ''class_inclusion_list'': None, ''max_num_samples'': None}'
+        valid_dataloader_params:
+            batch_size: 32
+            collate_fn: <super_gradients.training.utils.collate_fn.detection_collate_fn.DetectionCollateFN object at 0x74003091f520>
+            drop_last: false
+            num_workers: 4
+            pin_memory: true
+            shuffle: false
+        valid_dataset_params: '{''data_dir'': ''./'', ''images_dir'': ''images/val'', ''labels_dir'': ''labels/val'', ''classes'': [''class_0''], ''input_dim'': [640, 640], ''cache_annotations'': True, ''ignore_empty_annotations'': True, ''transforms'': [{''DetectionPaddedRescale'': {''input_dim'': [640, 640]}}, {''DetectionTargetsFormatTransform'': {''input_dim'': [640, 640], ''output_format'': ''LABEL_CXCYWH''}}], ''class_inclusion_list'': None, ''max_num_samples'': None}'
+training_hyperparams:
+    value:
+        average_best_models: true
+        batch_accumulate: 1
+        callback_kwargs:
+            early_stopping_patience: 5
+            mode: max
+            monitor: val_precision_50
+        ckpt_best_name: ckpt_best.pth
+        ckpt_name: ckpt_latest.pth
+        clip_grad_norm: null
+        cosine_final_lr_ratio: 0.01
+        dataset_statistics: false
+        dropout: 0.1
+        ema: true
+        ema_params:
+            beta: 10
+            decay: 0.9995
+            decay_type: exp
+        enable_qat: false
+        finetune: false
+        greater_metric_to_watch_is_better: true
+        initial_lr: 0.0001
+        input_size_range:
+            max: 640
+            min: 320
+            step: 32
+        kill_ddp_pgroup_on_end: true
+        label_smoothing: 0.1
+        launch_tensorboard: false
+        load_opt_params: true
+        log_installed_packages: true
+        loss: |-
+            PPYoloELoss(
+              (static_assigner): ATSSAssigner()
+              (assigner): TaskAlignedAssigner()
+            )
+        lr_cooldown_epochs: 0
+        lr_mode: cosine
+        lr_schedule_function: null
+        lr_updates: []
+        lr_warmup_epochs: 5
+        lr_warmup_steps: 0
+        max_epochs: 50
+        max_train_batches: null
+        max_valid_batches: null
+        metric_to_watch: mAP@0.50
+        mixed_precision: true
+        optimizer: AdamW
+        optimizer_params:
+            weight_decay: 0.001
+        phase_callbacks: null
+        pre_prediction_callback: null
+        precise_bn: false
+        precise_bn_batch_size: null
+        resume: true
+        resume_from_remote_sg_logger: false
+        resume_path: null
+        resume_strict_load: false
+        run_test_freq: 1
+        run_validation_freq: 1
+        save_ckpt_after_epoch: true
+        save_ckpt_dir: /License-Plate-Fine-Tune-YoloNas/checkpoints
+        save_ckpt_epoch_list: []
+        save_model: true
+        save_tensorboard_to_s3: false
+        schema:
+            if:
+                properties:
+                    lr_mode:
+                        const: StepLRScheduler
+            properties:
+                initial_lr:
+                    anyOf:
+                        - type:
+                            - number
+                            - string
+                            - boolean
+                            - "null"
+                        - additionalProperties: false
+                          patternProperties:
+                            ^[a-zA-Z0-9_.]+$:
+                                type: number
+                          type: object
+                lr_decay_factor:
+                    maximum: 1
+                    minimum: 0
+                    type: number
+                lr_warmup_epochs:
+                    maximum: 10
+                    minimum: 0
+                    type: number
+                max_epochs:
+                    minimum: 1
+                    type: number
+            required:
+                - max_epochs
+                - lr_mode
+                - initial_lr
+                - loss
+            then:
+                required:
+                    - lr_updates
+                    - lr_decay_factor
+            type: object
+        seed: 42
+        sg_logger: wandb_sg_logger
+        sg_logger_params:
+            launch_tensorboard: false
+            project_name: license-plate-detection
+            run_name: yolo-nas-s-finetuning
+            save_checkpoint_as_artifact: true
+            save_checkpoints_remote: true
+            save_logs_remote: false
+            save_tensorboard_remote: true
+            tb_files_user_prompt: false
+            tensorboard_port: null
+        silent_mode: false
+        step_lr_update_freq: null
+        sync_bn: false
+        tb_files_user_prompt: false
+        tensorboard_port: null
+        torch_compile: false
+        torch_compile_loss: false
+        torch_compile_options:
+            backend: inductor
+            disable: false
+            dynamic: false
+            fullgraph: false
+            mode: reduce-overhead
+            options: null
+        train_metrics_list: []
+        valid_metrics_list:
+            - |-
+              DetectionMetrics_050(
+                (post_prediction_callback): PPYoloEPostPredictionCallback()
+              )
+        warmup_initial_lr: 1e-06
+        warmup_mode: LinearEpochLRWarmup
+        zero_weight_decay_on_bias_and_bn: true

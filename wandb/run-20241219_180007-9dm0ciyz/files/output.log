@@ -1,0 +1,35 @@
+Indexing dataset annotations: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 25470/25470 [00:03<00:00, 7361.82it/s]
+Indexing dataset annotations: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1073/1073 [00:00<00:00, 7365.47it/s]
+Fixing model download URLs...
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py:186: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  state_dict = torch.load(ckpt_path, map_location=device)
+The console stream is now moved to /License-Plate-Fine-Tune-YoloNas/checkpoints/license_plate_detection/RUN_20241219_173952_828490/console_Dec19_18_00_16.txt
+[2024-12-19 18:00:16] WARNING - wandb_sg_logger.py - A Weights & Biases run was initialized before initializing `WandBSGLogger`. This means that `super-gradients` cannot control the run ID to which this session will be logged.
+[2024-12-19 18:00:16] WARNING - wandb_sg_logger.py - In order to resume this run please call `wandb.init(id=9dm0ciyz, resume='must')` before reinitializing `WandBSGLogger`.
+[2024-12-19 18:00:16] INFO - sg_trainer.py - Using EMA with params {'decay': 0.9995, 'decay_type': 'exp', 'beta': 10}
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:1753: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = GradScaler(enabled=mixed_precision_enabled)
+[2024-12-19 18:00:20] INFO - sg_trainer_utils.py - TRAINING PARAMETERS:
+    - Mode:                         Single GPU
+    - Number of GPUs:               1          (1 available on the machine)
+    - Full dataset size:            25452      (len(train_set))
+    - Batch size per GPU:           32         (batch_size)
+    - Batch Accumulate:             1          (batch_accumulate)
+    - Total batch size:             32         (num_gpus * batch_size)
+    - Effective Batch size:         32         (num_gpus * batch_size * batch_accumulate)
+    - Iterations per epoch:         795        (len(train_loader))
+    - Gradient updates per epoch:   795        (len(train_loader) / batch_accumulate)
+    - Model: YoloNAS_S  (19.02M parameters, 19.02M optimized)
+    - Learning Rates and Weight Decays:
+      - default: (19.02M parameters). LR: 4.06e-05 (19.02M parameters) WD: 0.0, (42.13K parameters), WD: 0.001, (18.98M parameters)
+
+[2024-12-19 18:00:20] INFO - sg_trainer.py - Couldn't fetch mAP@0.50 from the checkpoint.
+ Running test on the validation data before resuming training...
+Testing: 100%|██████████| 34/34 [00:09<00:00,  3.50it/s]
+/usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/weight_averaging_utils.py:132: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  return torch.load(self.averaging_snapshots_file, map_location="cpu")
+[2024-12-19 18:00:33] INFO - sg_trainer.py - Started training for 47 epochs (3/49)
+
+Train epoch 3:   0%|          | 0/795 [00:00<?, ?it/s]/usr/local/lib/python3.8/dist-packages/super_gradients/training/sg_trainer/sg_trainer.py:502: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast(enabled=self.training_params.mixed_precision):
+Train epoch 3:  38%|███▊      | 304/795 [01:36<02:30,  3.27it/s, PPYoloELoss/loss=2.03, PPYoloELoss/loss_cls=0.802, PPYoloELoss/loss_dfl=0.522, PPYoloELoss/loss_iou=0.711, gpu_mem=12.5]
