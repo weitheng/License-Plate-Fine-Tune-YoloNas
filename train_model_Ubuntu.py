@@ -65,6 +65,9 @@ def main():
     os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
     os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
 
+    # Define the YOLO-NAS-S model
+    model = models.get(Models.YOLO_NAS_S, num_classes=len(dataset_config['names']))
+
     # Training parameters
     train_params = {
         'save_ckpt_after_epoch': True,
