@@ -149,9 +149,7 @@ def main():
         model=model,
         training_params=train_params,
         train_loader=train_data,
-        valid_loader=val_data,
-        optimizer=optimizer,
-        scheduler=scheduler
+        valid_loader=val_data
     )
 
     # Save final model checkpoint
