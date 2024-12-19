@@ -30,7 +30,6 @@ def main():
     # Prepare dataloaders with optimized parameters
     train_data = coco_detection_yolo_format_train(
         dataset_params={
-        dataset_params={
             'data_dir': './',
             'images_dir': 'images/train',
             'labels_dir': 'labels/val',
