@@ -11,12 +11,14 @@ from super_gradients.training.metrics import DetectionMetrics_050
 from super_gradients.training.models.detection_models.pp_yolo_e import PPYoloEPostPredictionCallback
 import wandb
 from yolo_training_utils import assess_hardware_capabilities, load_dataset_config, setup_directories
+from torch.optim.lr_scheduler import OneCycleLR
+
 
 def main():
     # Initialize wandb
     wandb.login()
     wandb.init(project="license-plate-detection", name="yolo-nas-s-finetuning")
-    
+
     # Setup directories
     checkpoint_dir, export_dir = setup_directories("./")
 
@@ -27,7 +29,7 @@ def main():
     # Get optimal hardware settings
     hw_params = assess_hardware_capabilities()
 
-    # Prepare dataloaders with optimized parameters
+    # Prepare dataloaders with data augmentation
     train_data = coco_detection_yolo_format_train(
         dataset_params={
             'data_dir': './',
@@ -35,11 +37,11 @@ def main():
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
             'input_dim': (640, 640),
-#             'transforms': [
-#                 {'DetectionRandomAffine': {
-#                     'degrees': 15
-#                 }}
-#             ]
+            'augmentations': {
+                'flip': 0.5,  # Random horizontal flip
+                'scale': [0.8, 1.2],  # Random scaling
+                'crop': [0.8, 1.0],  # Random cropping
+            }
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
@@ -56,7 +58,7 @@ def main():
             'images_dir': 'images/val',
             'labels_dir': 'labels/val',
             'classes': dataset_config['names'],
-            'input_dim': (640, 640)  # Add this line
+            'input_dim': (640, 640)
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
@@ -67,22 +69,10 @@ def main():
         }
     )
 
-    # Fix download URLs for YOLO-NAS S model
-    print("Fixing model download URLs...")
-    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
-    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
-
     # Define the YOLO-NAS-S model
     model = models.get(Models.YOLO_NAS_S, num_classes=len(dataset_config['names']))
 
-    # Define checkpoint directory
-    checkpoint_dir = os.path.abspath("./checkpoints")
-    os.makedirs(checkpoint_dir, exist_ok=True)  # Ensure the directory exists
-
-    # Define checkpoint directory
-    export_dir = os.path.abspath("./export")
-    os.makedirs(export_dir, exist_ok=True)  # Ensure the directory exists# Training parameters
-
+    # Training parameters
     train_params = {
         'save_ckpt_after_epoch': True,
         'save_ckpt_dir': checkpoint_dir,
@@ -91,13 +81,13 @@ def main():
         'average_best_models': True,
         'warmup_mode': 'LinearEpochLRWarmup',
         'warmup_initial_lr': 1e-6,
-        'lr_warmup_epochs': 5,  #Increase from 3
-        'initial_lr': 1e-4,  # Slightly lower learning rate
+        'lr_warmup_epochs': 5,
+        'initial_lr': 1e-4,
         'lr_mode': 'cosine',
         'cosine_final_lr_ratio': 0.01,
-        'optimizer': 'AdamW',  # Switch to AdamW from Adam
+        'optimizer': 'AdamW',
         'optimizer_params': {
-            'weight_decay': 0.001  # Increase weight decay
+            'weight_decay': 0.001
         },
         'zero_weight_decay_on_bias_and_bn': True,
         'ema': True,
@@ -106,25 +96,26 @@ def main():
             'decay_type': 'exp',
             'beta': 10
         },
-        'max_epochs': 50,
+        'max_epochs': 40,
+        'early_stopping_patience': 5,
         'mixed_precision': torch.cuda.is_available(),
         'loss': PPYoloELoss(
             use_static_assigner=False,
             num_classes=len(dataset_config['names']),
             reg_max=16,
-            iou_loss_weight=3.0  # Increase IOU loss weight
+            iou_loss_weight=3.0
         ),
         'valid_metrics_list': [
-        DetectionMetrics_050(
-            score_thres=0.3,  # Increase confidence threshold
-            top_k_predictions=200,  # Reduce top k predictions
-            num_cls=len(dataset_config['names']),
-            normalize_targets=True,
-            post_prediction_callback=PPYoloEPostPredictionCallback(
-                score_threshold=0.3,  # Increase score threshold
-                nms_threshold=0.5,  # Stricter NMS
-                nms_top_k=500,
-                max_predictions=200
+            DetectionMetrics_050(
+                score_thres=0.3,
+                top_k_predictions=200,
+                num_cls=len(dataset_config['names']),
+                normalize_targets=True,
+                post_prediction_callback=PPYoloEPostPredictionCallback(
+                    score_threshold=0.3,
+                    nms_threshold=0.5,
+                    nms_top_k=500,
+                    max_predictions=200
                 )
             )
         ],
@@ -136,34 +127,31 @@ def main():
             'save_checkpoint_as_artifact': True,
             'project_name': 'license-plate-detection',
             'run_name': 'yolo-nas-s-finetuning'
-        }
-    }
-    train_params['callback_kwargs'] = {
-        'early_stopping_patience': 5,
-        'monitor': 'val_precision_50',  # Monitor precision
-        'mode': 'max'
-    }
-
-    train_params['input_size_range'] = {
-        'min': 320,
-        'max': 640,
-        'step': 32
-    }
-
-    train_params.update({
+        },
         'dropout': 0.1,
-        'mixed_precision': True,
         'label_smoothing': 0.1
-    })
+    }
+
+    # Scheduler integration
+    optimizer = torch.optim.AdamW(model.parameters(), lr=train_params['initial_lr'], weight_decay=0.001)
+    scheduler = OneCycleLR(
+        optimizer,
+        max_lr=train_params['initial_lr'],
+        steps_per_epoch=len(train_data),
+        epochs=train_params['max_epochs'],
+        pct_start=0.3
+    )
+
     # Initialize trainer and start training
-    trainer = Trainer(experiment_name='license_plate_detection',
-                     ckpt_root_dir=checkpoint_dir)
+    trainer = Trainer(experiment_name='license_plate_detection', ckpt_root_dir=checkpoint_dir)
 
     trainer.train(
         model=model,
         training_params=train_params,
         train_loader=train_data,
-        valid_loader=val_data
+        valid_loader=val_data,
+        optimizer=optimizer,
+        scheduler=scheduler
     )
 
     # Save final model checkpoint
