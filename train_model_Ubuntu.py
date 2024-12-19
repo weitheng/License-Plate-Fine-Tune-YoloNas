@@ -114,7 +114,6 @@ def main():
             num_classes=len(dataset_config['names']),
             reg_max=16,
             iou_loss_weight=3.0,  # Increase IOU loss weight
-            focal_loss_gamma=2.0,  # Add focal loss parameters
             focal_loss_alpha=0.25
         ),
         'valid_metrics_list': [
