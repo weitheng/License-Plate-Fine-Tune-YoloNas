@@ -34,7 +34,7 @@ def main():
             'images_dir': 'images/train',
             'labels_dir': 'labels/train',
             'classes': dataset_config['names'],
-#             'input_dim': (640, 640),
+            'input_dim': (640, 640),
             'transforms': [
                 {'DetectionRandomAffine': {
                     'degrees': 15
@@ -56,7 +56,7 @@ def main():
             'images_dir': 'images/val',
             'labels_dir': 'labels/val',
             'classes': dataset_config['names'],
-#             'input_dim': (640, 640)  # Add this line
+            'input_dim': (640, 640)  # Add this line
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
@@ -138,11 +138,11 @@ def main():
             'run_name': 'yolo-nas-s-finetuning'
         }
     }
-    train_params['callback_kwargs'] = {
-        'early_stopping_patience': 5,
-        'monitor': 'val_precision_50',  # Monitor precision
-        'mode': 'max'
-    }
+#     train_params['callback_kwargs'] = {
+#         'early_stopping_patience': 5,
+#         'monitor': 'val_precision_50',  # Monitor precision
+#         'mode': 'max'
+#     }
 
     train_params['input_size_range'] = {
         'min': 320,
