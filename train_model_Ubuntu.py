@@ -69,10 +69,22 @@ def main():
         }
     )
 
+    # Fix download URLs for YOLO-NAS S model
+    print("Fixing model download URLs...")
+    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
+    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
+
     # Define the YOLO-NAS-S model
     model = models.get(Models.YOLO_NAS_S, num_classes=len(dataset_config['names']))
 
-    # Training parameters
+    # Define checkpoint directory
+    checkpoint_dir = os.path.abspath("./checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)  # Ensure the directory exists
+
+    # Define checkpoint directory
+    export_dir = os.path.abspath("./export")
+    os.makedirs(export_dir, exist_ok=True)  # Ensure the directory exists# Training parameters
+
     train_params = {
         'save_ckpt_after_epoch': True,
         'save_ckpt_dir': checkpoint_dir,
@@ -129,6 +141,7 @@ def main():
             'run_name': 'yolo-nas-s-finetuning'
         },
         'dropout': 0.1,
+        'mixed_precision': True,
         'label_smoothing': 0.1
     }
 
