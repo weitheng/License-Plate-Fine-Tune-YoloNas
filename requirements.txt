@@ -1,0 +1,12 @@
+# Core dependencies
+protobuf
+pyyaml
+onnx
+pycocotools
+ultralytics
+psutil
+super-gradients
+wandb
+
+# OpenCV
+opencv-python
