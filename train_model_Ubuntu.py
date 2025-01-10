@@ -16,65 +16,22 @@ from pycocotools.coco import COCO
 import requests
 import zipfile
 from tqdm import tqdm
+import logging
+from config import TrainingConfig
+from typing import Optional, List, Dict, Any, Tuple
+import time
 
-class KnowledgeDistillationLoss(torch.nn.Module):
-    def __init__(self, student_loss_fn, temperature=4.0, alpha=0.5):
-        super().__init__()
-        self.student_loss_fn = student_loss_fn
-        self.temperature = temperature
-        self.alpha = alpha
-        self.teacher_outputs = None  # Store teacher outputs here
-        
-    def set_teacher_outputs(self, outputs):
-        """Store teacher model outputs for distillation"""
-        self.teacher_outputs = outputs
-        
-    def forward(self, student_outputs, targets):
-        """
-        Forward pass for knowledge distillation loss
-        Args:
-            student_outputs: Output from student model
-            targets: Ground truth targets
-        """
-        # Standard student loss
-        student_loss = self.student_loss_fn(student_outputs, targets)
-        
-        # If no teacher outputs available, return only student loss
-        if self.teacher_outputs is None:
-            return student_loss
-            
-        # Calculate distillation loss using stored teacher outputs
-        distillation_loss = torch.nn.functional.kl_div(
-            torch.nn.functional.log_softmax(student_outputs / self.temperature, dim=1),
-            torch.nn.functional.softmax(self.teacher_outputs / self.temperature, dim=1),
-            reduction='batchmean'
-        ) * (self.temperature ** 2)
-        
-        # Combine losses
-        total_loss = (1 - self.alpha) * student_loss + self.alpha * distillation_loss
-        return total_loss
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('training.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-class DistillationTrainer(Trainer):
-    def __init__(self, teacher_model, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.teacher_model = teacher_model.to(self.device)
-        
-    def train_batch(self, batch_idx, batch_data, **kwargs):
-        images, targets = batch_data
-        images = images.to(self.device)
-        
-        # Get teacher predictions
-        with torch.no_grad():
-            teacher_outputs = self.teacher_model(images)
-        
-        # Set teacher outputs in the loss function
-        if isinstance(self.criterion, KnowledgeDistillationLoss):
-            self.criterion.set_teacher_outputs(teacher_outputs)
-        
-        # Call parent's train_batch with original targets
-        return super().train_batch(batch_idx, (images, targets), **kwargs)
-
-def download_model_weights(model_name, target_path):
+def download_model_weights(model_name: str, target_path: str) -> bool:
     """Download model weights from alternative sources if primary fails"""
     urls = {
         'YOLO_NAS_L': [
@@ -139,52 +96,63 @@ def download_coco_subset(target_dir, num_images=70000):
 
 def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
     """Convert COCO annotations to YOLO format"""
-    splits = ['train2017', 'val2017']
-    
-    for split in splits:
-        anno_file = os.path.join(coco_dir, 'annotations', f'instances_{split}.json')
-        if not os.path.exists(anno_file):
-            print(f"Missing annotation file: {anno_file}")
-            continue
-            
-        coco = COCO(anno_file)
+    try:
+        splits = ['train2017', 'val2017']
         
-        # Get image ids and categories
-        img_ids = coco.getImgIds()
-        if split == 'train2017':
-            img_ids = img_ids[:num_images]  # Limit only training images
+        for split in splits:
+            anno_file = os.path.join(coco_dir, 'annotations', f'instances_{split}.json')
+            if not os.path.exists(anno_file):
+                raise FileNotFoundError(f"Missing annotation file: {anno_file}")
             
-        # Create category mapping
-        cat_ids = coco.getCatIds()
-        cat_map = {old_id: new_id for new_id, old_id in enumerate(cat_ids)}
-        
-        # Convert annotations
-        for img_id in tqdm(img_ids, desc=f"Converting {split}"):
-            img_info = coco.loadImgs(img_id)[0]
-            ann_ids = coco.getAnnIds(imgIds=img_id)
-            anns = coco.loadAnns(ann_ids)
+            print(f"Processing {split} split...")
+            coco = COCO(anno_file)
             
-            # Create YOLO format annotations
-            yolo_anns = []
-            for ann in anns:
-                cat_id = cat_map[ann['category_id']]  # Map to new category ID
-                bbox = ann['bbox']
-                x_center = (bbox[0] + bbox[2]/2) / img_info['width']
-                y_center = (bbox[1] + bbox[3]/2) / img_info['height']
-                width = bbox[2] / img_info['width']
-                height = bbox[3] / img_info['height']
-                yolo_anns.append(f"{cat_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
+            # Get image ids and categories
+            img_ids = coco.getImgIds()
+            if split == 'train2017':
+                img_ids = img_ids[:num_images]  # Limit only training images
             
-            # Save annotations
-            out_dir = 'train' if split == 'train2017' else 'val'
-            with open(os.path.join(target_dir, 'labels', out_dir, f"{img_info['file_name'].split('.')[0]}.txt"), 'w') as f:
-                f.write('\n'.join(yolo_anns))
+            # Create category mapping
+            cat_ids = coco.getCatIds()
+            cat_map = {old_id: new_id for new_id, old_id in enumerate(cat_ids)}
+            
+            # Convert annotations
+            for img_id in tqdm(img_ids, desc=f"Converting {split}"):
+                img_info = coco.loadImgs(img_id)[0]
+                ann_ids = coco.getAnnIds(imgIds=img_id)
+                anns = coco.loadAnns(ann_ids)
+                
+                # Create YOLO format annotations
+                yolo_anns = []
+                for ann in anns:
+                    cat_id = cat_map[ann['category_id']]  # Map to new category ID
+                    bbox = ann['bbox']
+                    x_center = (bbox[0] + bbox[2]/2) / img_info['width']
+                    y_center = (bbox[1] + bbox[3]/2) / img_info['height']
+                    width = bbox[2] / img_info['width']
+                    height = bbox[3] / img_info['height']
+                    yolo_anns.append(f"{cat_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
+                
+                # Save annotations
+                out_dir = 'train' if split == 'train2017' else 'val'
+                with open(os.path.join(target_dir, 'labels', out_dir, f"{img_info['file_name'].split('.')[0]}.txt"), 'w') as f:
+                    f.write('\n'.join(yolo_anns))
 
-def prepare_combined_dataset():
+    except Exception as e:
+        print(f"Error converting COCO to YOLO format: {e}")
+        raise
+
+def prepare_combined_dataset() -> None:
     """Prepare combined COCO and license plate dataset"""
+    # Create combined dataset directories
+    combined_dir = './data/combined'
+    for split in ['train', 'val']:
+        os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
+        os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
+
     # Download and prepare COCO data
     if download_coco_subset('./data'):
-        convert_coco_to_yolo('./data/coco', './data/combined')
+        convert_coco_to_yolo('./data/coco', combined_dir)
     else:
         raise RuntimeError("Failed to download COCO dataset")
     
@@ -192,14 +160,26 @@ def prepare_combined_dataset():
     for split in ['train', 'val']:
         images_dir = f'images/{split}'
         labels_dir = f'labels/{split}'
-        if os.path.exists(images_dir):
-            for img in os.listdir(images_dir):
-                os.system(f'cp "{os.path.join(images_dir, img)}" "./data/combined/images/{split}/lp_{img}"')
-        if os.path.exists(labels_dir):
-            for label in os.listdir(labels_dir):
-                os.system(f'cp "{os.path.join(labels_dir, label)}" "./data/combined/labels/{split}/lp_{label}"')
+        if os.path.exists(images_dir) and os.path.exists(labels_dir):
+            # Get list of label files
+            label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
+            
+            for label_file in label_files:
+                # Get corresponding image file
+                img_base = label_file.replace('.txt', '')
+                img_extensions = ['.jpg', '.jpeg', '.png']
+                img_file = None
+                for ext in img_extensions:
+                    if os.path.exists(os.path.join(images_dir, img_base + ext)):
+                        img_file = img_base + ext
+                        break
+                
+                if img_file:
+                    # Copy both image and label with prefix
+                    os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
+                    os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
 
-def validate_dataset(data_dir):
+def validate_dataset(data_dir: str) -> None:
     """Validate combined dataset structure"""
     required_dirs = [
         'images/train', 'images/val',
@@ -214,15 +194,65 @@ def validate_dataset(data_dir):
         if len(os.listdir(path)) == 0:
             raise RuntimeError(f"Directory is empty: {path}")
 
+def validate_dataset_contents(data_dir: str) -> None:
+    """Validate dataset contents and format"""
+    for split in ['train', 'val']:
+        images_dir = os.path.join(data_dir, f'images/{split}')
+        labels_dir = os.path.join(data_dir, f'labels/{split}')
+        
+        # Check image-label pairs
+        image_files = set(f.split('.')[0] for f in os.listdir(images_dir))
+        label_files = set(f.split('.')[0] for f in os.listdir(labels_dir))
+        
+        # Check for missing files
+        missing_labels = image_files - label_files
+        missing_images = label_files - image_files
+        
+        if missing_labels:
+            logger.warning(f"Images without labels in {split}: {missing_labels}")
+        if missing_images:
+            logger.warning(f"Labels without images in {split}: {missing_images}")
+
+def cleanup_downloads():
+    """Clean up downloaded files after processing"""
+    try:
+        for file in os.listdir('./data'):
+            if file.startswith('coco_') and file.endswith('.zip'):
+                os.remove(os.path.join('./data', file))
+    except Exception as e:
+        logger.warning(f"Error cleaning up downloads: {e}")
+
+class TrainingProgressCallback:
+    def __init__(self):
+        self.best_map = 0
+        self.best_epoch = 0
+        self.start_time = None
+        
+    def __call__(self, epoch, metrics, context):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        current_map = metrics.get('mAP@0.50', 0)
+        if current_map > self.best_map:
+            self.best_map = current_map
+            self.best_epoch = epoch
+            logger.info(f"New best mAP: {self.best_map:.4f} at epoch {epoch}")
+            
+        # Log training progress
+        elapsed_time = time.time() - self.start_time
+        logger.info(f"Epoch {epoch}: mAP={current_map:.4f}, Best={self.best_map:.4f} (epoch {self.best_epoch}), Time={elapsed_time/3600:.1f}h")
+
 def main():
     try:
         # Prepare dataset first
         prepare_combined_dataset()
         
-        # Then proceed with model setup and training
+        # Validate dataset structure
+        validate_dataset('./data/combined')
+        
         # Initialize wandb
         wandb.login()
-        wandb.init(project="license-plate-detection", name="yolo-nas-s-distillation")
+        wandb.init(project="license-plate-detection", name="yolo-nas-s-coco-finetuning")
 
         # Setup directories
         checkpoint_dir, export_dir = setup_directories("./")
@@ -254,72 +284,28 @@ def main():
         os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
         os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
 
-        # Setup teacher model with COCO weights
-        teacher_model = models.get(Models.YOLO_NAS_L, pretrained_weights="coco")
-        teacher_model.eval()
-        for param in teacher_model.parameters():
-            param.requires_grad = False
-
-        # Initialize student model with COCO weights and modify last layer for 81 classes
+        # Initialize model with COCO weights
         model = models.get(Models.YOLO_NAS_S, 
                           num_classes=81,  # 80 COCO classes + 1 license plate class
-                          pretrained_weights="coco")  # Start with COCO weights
+                          pretrained_weights="coco")
         
-        # Modify the model's classification head for 81 classes
-        # The exact modification depends on the model architecture
-        # The pretrained weights for the first 80 classes are preserved
-        
-        # Update the loss function for 81 classes
-        base_loss = PPYoloELoss(
+        # Define loss function
+        loss_fn = PPYoloELoss(
             use_static_assigner=False,
-            num_classes=81,  # Updated for total number of classes
+            num_classes=81,
             reg_max=16,
             iou_loss_weight=3.0
         )
 
-        # Create knowledge distillation loss
-        distillation_loss = KnowledgeDistillationLoss(
-            student_loss_fn=base_loss,
-            temperature=4.0,
-            alpha=0.5
-        )
-
-        # Update data paths in dataloaders
-        train_data = coco_detection_yolo_format_train(
-            dataset_params={
-                'data_dir': './data/combined',
-                'images_dir': 'images/train',
-                'labels_dir': 'labels/train',
-                'classes': dataset_config['names'],
-                'input_dim': (640, 640),
-            },
-            dataloader_params={
-                'batch_size': hw_params['batch_size'],
-                'num_workers': 4,  # Hardcoded num_workers
-                'shuffle': True,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': True  # Helps with batch normalization
-            }
-        )
-
-        val_data = coco_detection_yolo_format_val(
-            dataset_params={
-                'data_dir': './data/combined',
-                'images_dir': 'images/val',
-                'labels_dir': 'labels/val',
-                'classes': dataset_config['names'],
-                'input_dim': (640, 640)
-            },
-            dataloader_params={
-                'batch_size': hw_params['batch_size'],
-                'num_workers': 4,  # Hardcoded num_workers
-                'shuffle': False,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': False
-            }
-        )
-
-        # Update metrics for 81 classes
+        # Get GPU memory if available
+        gpu_memory_gb = 0
+        if torch.cuda.is_available():
+            gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        
+        # Initialize config based on hardware
+        config = TrainingConfig.from_gpu_memory(gpu_memory_gb)
+        
+        # Update training parameters with config values
         train_params = {
             'save_ckpt_after_epoch': True,
             'save_ckpt_dir': checkpoint_dir,
@@ -328,34 +314,24 @@ def main():
             'average_best_models': True,
             'warmup_mode': 'LinearEpochLRWarmup',
             'warmup_initial_lr': 1e-6,
-            'lr_warmup_epochs': 5,
-            'initial_lr': 1e-4,
-            'lr_mode': 'cosine',  # Changed back to cosine
-            'cosine_final_lr_ratio': 0.1,
-            'optimizer': 'AdamW',
-            'optimizer_params': {'weight_decay': 0.001},
-            'zero_weight_decay_on_bias_and_bn': True,
-            'ema': True,
-            'ema_params': {
-                'decay': 0.9995,
-                'decay_type': 'exp',
-                'beta': 10
-            },
-            'max_epochs': 65,
-            'early_stopping_patience': 5,
+            'lr_warmup_epochs': config.warmup_epochs,
+            'initial_lr': config.initial_lr,
+            'lr_mode': 'cosine',
+            'max_epochs': config.num_epochs,
+            'early_stopping_patience': config.early_stopping_patience,
             'mixed_precision': torch.cuda.is_available(),
-            'loss': distillation_loss,
+            'loss': loss_fn,
             'valid_metrics_list': [
                 DetectionMetrics_050(
-                    score_thres=0.3,
-                    top_k_predictions=200,
-                    num_cls=81,  # Updated for total number of classes
+                    score_thres=config.confidence_threshold,
+                    top_k_predictions=config.max_predictions,
+                    num_cls=81,
                     normalize_targets=True,
                     post_prediction_callback=PPYoloEPostPredictionCallback(
-                        score_threshold=0.3,
-                        nms_threshold=0.5,
-                        nms_top_k=500,
-                        max_predictions=200
+                        score_threshold=config.confidence_threshold,
+                        nms_threshold=config.nms_threshold,
+                        nms_top_k=config.max_predictions,
+                        max_predictions=config.max_predictions
                     )
                 )
             ],
@@ -366,39 +342,76 @@ def main():
                 'save_tensorboard_remote': True,
                 'save_checkpoint_as_artifact': True,
                 'project_name': 'license-plate-detection',
-                'run_name': 'yolo-nas-s-distillation'
+                'run_name': 'yolo-nas-s-coco-finetuning'
             },
-            'dropout': 0.1,
-            'label_smoothing': 0.1,
+            'dropout': config.dropout,
+            'label_smoothing': config.label_smoothing,
             'resume_path': os.path.join(checkpoint_dir, 'latest_checkpoint.pth'),
-            'resume_strict_load': False
+            'resume_strict_load': False,
+            'optimizer_params': {'weight_decay': config.weight_decay}
         }
 
-        # Get available GPU memory
-        if torch.cuda.is_available():
-            gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
-            
-            # Adjust batch size based on available memory
-            if gpu_mem < 8:  # Less than 8GB
-                train_params['batch_size'] = min(train_params['batch_size'], 4)
-            elif gpu_mem < 16:  # Less than 16GB
-                train_params['batch_size'] = min(train_params['batch_size'], 8)
+        # Update dataloader params
+        train_data = coco_detection_yolo_format_train(
+            dataset_params={
+                'data_dir': './data/combined',
+                'images_dir': 'images/train',
+                'labels_dir': 'labels/train',
+                'classes': dataset_config['names'],
+                'input_dim': config.input_size,
+            },
+            dataloader_params={
+                'batch_size': config.batch_size,
+                'num_workers': config.num_workers,
+                'shuffle': True,
+                'pin_memory': torch.cuda.is_available(),
+                'drop_last': True
+            }
+        )
 
-        # Initialize trainer
-        trainer = DistillationTrainer(
-            teacher_model=teacher_model,
+        val_data = coco_detection_yolo_format_val(
+            dataset_params={
+                'data_dir': './data/combined',
+                'images_dir': 'images/val',
+                'labels_dir': 'labels/val',
+                'classes': dataset_config['names'],
+                'input_dim': config.input_size,
+            },
+            dataloader_params={
+                'batch_size': config.batch_size,
+                'num_workers': config.num_workers,
+                'shuffle': False,
+                'pin_memory': torch.cuda.is_available(),
+                'drop_last': False
+            }
+        )
+
+        # Initialize standard trainer
+        trainer = Trainer(
             experiment_name='coco_license_plate_detection',
             ckpt_root_dir=checkpoint_dir
         )
 
-        # Train the model
+        # Initialize progress callback
+        progress_callback = TrainingProgressCallback()
+        
+        # Add callback to training params
+        train_params['phase_callbacks'] = [progress_callback]
+        
+        # Validate dataset contents before training
+        validate_dataset_contents('./data/combined')
+        
+        # Train model
         trainer.train(
             model=model,
             training_params=train_params,
             train_loader=train_data,
             valid_loader=val_data
         )
-
+        
+        # Cleanup downloaded files
+        cleanup_downloads()
+        
         # Save final model checkpoint
         final_checkpoint_path = os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth')
         trainer.save_checkpoint(model_state=model.state_dict(), optimizer_state=None, scheduler_state=None, checkpoint_path=final_checkpoint_path)
@@ -409,14 +422,14 @@ def main():
             for idx, class_name in enumerate(dataset_config['names']):
                 f.write(f"{idx}: {class_name}\n")
 
-        # Export model to ONNX format
+        # Export model to ONNX format with reduced size for efficient inference
         onnx_path = os.path.join(export_dir, "yolo_nas_s_coco_license_plate.onnx")
         model.export(
             onnx_path,
             output_predictions_format="FLAT_FORMAT",
-            max_predictions_per_image=20,
-            confidence_threshold=0.4,
-            input_image_shape=(320, 320)
+            max_predictions_per_image=config.max_predictions,
+            confidence_threshold=config.confidence_threshold,
+            input_image_shape=config.export_image_size  # Using smaller size for inference
         )
 
         print(f"\nTraining completed!")
@@ -428,9 +441,15 @@ def main():
         wandb.finish()
 
     except Exception as e:
-        print(f"Error during training: {e}")
+        logger.error(f"Error during training: {e}")
         wandb.finish()
         raise
+    finally:
+        # Always try to cleanup
+        try:
+            cleanup_downloads()
+        except Exception as e:
+            logger.warning(f"Error during cleanup: {e}")
 
 if __name__ == "__main__":
     main()
