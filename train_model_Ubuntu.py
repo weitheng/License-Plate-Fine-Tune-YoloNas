@@ -375,6 +375,11 @@ def main():
         # Setup directories
         logger.info("Setting up directories...")
         checkpoint_dir, export_dir = setup_directories("./")
+        
+        # Convert to absolute paths
+        current_dir = os.path.abspath(os.path.dirname(__file__))
+        checkpoint_dir = os.path.abspath(checkpoint_dir)
+        export_dir = os.path.abspath(export_dir)
         logger.info(f"✓ Directories set up: {checkpoint_dir}, {export_dir}")
 
         # Load dataset configuration
@@ -431,10 +436,10 @@ def main():
         # Initialize config based on hardware
         config = TrainingConfig.from_gpu_memory(gpu_memory_gb)
         
-        # Update training parameters with config values
+        # Update training parameters with absolute paths
         train_params = {
             'save_ckpt_after_epoch': True,
-            'save_ckpt_dir': checkpoint_dir,
+            'save_ckpt_dir': checkpoint_dir,  # Already absolute
             'resume': False,
             'silent_mode': False,
             'average_best_models': True,
@@ -472,15 +477,16 @@ def main():
             },
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
-            'resume_path': os.path.join(checkpoint_dir, 'latest_checkpoint.pth'),
+            'resume_path': os.path.join(checkpoint_dir, 'latest_checkpoint.pth'),  # Using absolute path
             'resume_strict_load': False,
             'optimizer_params': {'weight_decay': config.weight_decay}
         }
 
-        # Update dataloader params
+        # Update dataloader params with absolute paths
+        data_dir = os.path.join(current_dir, 'data/combined')
         train_data = coco_detection_yolo_format_train(
             dataset_params={
-                'data_dir': './data/combined',
+                'data_dir': data_dir,  # Using absolute path
                 'images_dir': 'images/train',
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
@@ -497,7 +503,7 @@ def main():
 
         val_data = coco_detection_yolo_format_val(
             dataset_params={
-                'data_dir': './data/combined',
+                'data_dir': data_dir,  # Using absolute path
                 'images_dir': 'images/val',
                 'labels_dir': 'labels/val',
                 'classes': dataset_config['names'],
@@ -512,10 +518,10 @@ def main():
             }
         )
 
-        # Initialize standard trainer
+        # Initialize trainer with absolute path
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=checkpoint_dir
+            ckpt_root_dir=checkpoint_dir  # Already absolute
         )
 
         # Initialize progress callback
