@@ -133,7 +133,7 @@ def download_coco_subset(target_dir, num_images=70000):
     return True
 
 def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
-    """Convert COCO annotations to YOLO format"""
+    """Convert COCO annotations to YOLO format and copy corresponding images"""
     try:
         splits = ['train2017', 'val2017']
         
@@ -142,7 +142,7 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
             if not os.path.exists(anno_file):
                 raise FileNotFoundError(f"Missing annotation file: {anno_file}")
             
-            print(f"Processing {split} split...")
+            logger.info(f"Processing {split} split...")
             coco = COCO(anno_file)
             
             # Get image ids and categories
@@ -154,7 +154,8 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
             cat_ids = coco.getCatIds()
             cat_map = {old_id: new_id for new_id, old_id in enumerate(cat_ids)}
             
-            # Convert annotations
+            # Convert annotations and copy images
+            out_dir = 'train' if split == 'train2017' else 'val'
             for img_id in tqdm(img_ids, desc=f"Converting {split}"):
                 img_info = coco.loadImgs(img_id)[0]
                 ann_ids = coco.getAnnIds(imgIds=img_id)
@@ -172,12 +173,22 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
                     yolo_anns.append(f"{cat_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
                 
                 # Save annotations
-                out_dir = 'train' if split == 'train2017' else 'val'
-                with open(os.path.join(target_dir, 'labels', out_dir, f"{img_info['file_name'].split('.')[0]}.txt"), 'w') as f:
+                label_path = os.path.join(target_dir, 'labels', out_dir, f"{img_info['file_name'].split('.')[0]}.txt")
+                with open(label_path, 'w') as f:
                     f.write('\n'.join(yolo_anns))
+                
+                # Copy corresponding image
+                src_img_path = os.path.join(coco_dir, 'images', split, img_info['file_name'])
+                dst_img_path = os.path.join(target_dir, 'images', out_dir, img_info['file_name'])
+                if os.path.exists(src_img_path):
+                    os.system(f'cp "{src_img_path}" "{dst_img_path}"')
+                else:
+                    logger.warning(f"Image not found: {src_img_path}")
+
+            logger.success(f"✓ Processed {split} split: {len(img_ids)} images")
 
     except Exception as e:
-        print(f"Error converting COCO to YOLO format: {e}")
+        logger.error(f"Error converting COCO to YOLO format: {e}")
         raise
 
 def check_coco_dataset(coco_dir: str) -> bool:
