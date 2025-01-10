@@ -144,21 +144,26 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
 
 def prepare_combined_dataset() -> None:
     """Prepare combined COCO and license plate dataset"""
-    # Create combined dataset directories
-    combined_dir = './data/combined'
+    # Use /workspace for COCO processing
+    coco_dir = '/workspace/coco'
+    combined_dir = '/workspace/combined'
+    
+    # Create COCO processing directories
     for split in ['train', 'val']:
+        os.makedirs(os.path.join(coco_dir, f'images/{split}'), exist_ok=True)
+        os.makedirs(os.path.join(coco_dir, f'labels/{split}'), exist_ok=True)
         os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
         os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
 
-    # Download and prepare COCO data
-    if download_coco_subset('./data'):
-        convert_coco_to_yolo('./data/coco', combined_dir)
+    # Download and prepare COCO data in /workspace
+    if download_coco_subset(coco_dir):
+        convert_coco_to_yolo(coco_dir, combined_dir)
     else:
         raise RuntimeError("Failed to download COCO dataset")
     
     # Copy license plate data with prefix to avoid conflicts
     for split in ['train', 'val']:
-        images_dir = f'images/{split}'
+        images_dir = f'images/{split}'  # Original license plate data
         labels_dir = f'labels/{split}'
         if os.path.exists(images_dir) and os.path.exists(labels_dir):
             # Get list of label files
@@ -175,7 +180,7 @@ def prepare_combined_dataset() -> None:
                         break
                 
                 if img_file:
-                    # Copy both image and label with prefix
+                    # Copy both image and label to combined directory in /workspace
                     os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
                     os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
 
@@ -216,9 +221,10 @@ def validate_dataset_contents(data_dir: str) -> None:
 def cleanup_downloads():
     """Clean up downloaded files after processing"""
     try:
-        for file in os.listdir('./data'):
+        # Clean up COCO downloads in /workspace
+        for file in os.listdir('/workspace'):
             if file.startswith('coco_') and file.endswith('.zip'):
-                os.remove(os.path.join('./data', file))
+                os.remove(os.path.join('/workspace', file))
     except Exception as e:
         logger.warning(f"Error cleaning up downloads: {e}")
 
@@ -247,8 +253,9 @@ def main():
         # Prepare dataset first
         prepare_combined_dataset()
         
-        # Validate dataset structure
-        validate_dataset('./data/combined')
+        # Validate dataset structure with new path
+        validate_dataset('/workspace/combined')
+        validate_dataset_contents('/workspace/combined')
         
         # Initialize wandb
         wandb.login()
@@ -354,7 +361,7 @@ def main():
         # Update dataloader params
         train_data = coco_detection_yolo_format_train(
             dataset_params={
-                'data_dir': './data/combined',
+                'data_dir': '/workspace/combined',
                 'images_dir': 'images/train',
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
@@ -371,7 +378,7 @@ def main():
 
         val_data = coco_detection_yolo_format_val(
             dataset_params={
-                'data_dir': './data/combined',
+                'data_dir': '/workspace/combined',
                 'images_dir': 'images/val',
                 'labels_dir': 'labels/val',
                 'classes': dataset_config['names'],
@@ -397,9 +404,6 @@ def main():
         
         # Add callback to training params
         train_params['phase_callbacks'] = [progress_callback]
-        
-        # Validate dataset contents before training
-        validate_dataset_contents('./data/combined')
         
         # Train model
         trainer.train(
