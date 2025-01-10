@@ -22,6 +22,7 @@ from typing import Optional, List, Dict, Any, Tuple
 import time
 import coloredlogs
 import psutil
+import hashlib
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
@@ -83,54 +84,69 @@ def download_model_weights(model_name: str, target_path: str) -> bool:
         ]
     }
     
+    if model_name not in urls:
+        logger.error(f"Unknown model name: {model_name}")
+        return False
+        
     for url in urls.get(model_name, []):
         try:
-            print(f"Attempting to download from: {url}")
-            os.system(f"wget {url} -O {target_path}")
-            if os.path.exists(target_path):
+            logger.info(f"Attempting to download from: {url}")
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            
+            with open(target_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    
+            if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
+                logger.success(f"Successfully downloaded {model_name}")
                 return True
         except Exception as e:
-            print(f"Failed to download from {url}: {e}")
+            logger.error(f"Failed to download from {url}: {e}")
     return False
 
 def download_coco_subset(target_dir, num_images=70000):
     """Download a subset of COCO dataset"""
-    # Create directories for COCO structure
-    os.makedirs(os.path.join(target_dir, 'coco/train2017'), exist_ok=True)
-    os.makedirs(os.path.join(target_dir, 'coco/val2017'), exist_ok=True)
-    os.makedirs(os.path.join(target_dir, 'coco/annotations'), exist_ok=True)
+    try:
+        # Create directories for COCO structure
+        os.makedirs(os.path.join(target_dir, 'coco/train2017'), exist_ok=True)
+        os.makedirs(os.path.join(target_dir, 'coco/val2017'), exist_ok=True)
+        os.makedirs(os.path.join(target_dir, 'coco/annotations'), exist_ok=True)
 
-    # URLs for both images and annotations
-    urls = {
-        'train_images': 'http://images.cocodataset.org/zips/train2017.zip',
-        'val_images': 'http://images.cocodataset.org/zips/val2017.zip',
-        'annotations': 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
-    }
-    
-    for name, url in urls.items():
-        zip_path = os.path.join(target_dir, f'coco_{name}.zip')
-        if not os.path.exists(zip_path):
-            try:
-                print(f"Downloading COCO {name}...")
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                
-                with open(zip_path, 'wb') as f, tqdm(total=total_size, unit='B', unit_scale=True) as pbar:
-                    for data in response.iter_content(chunk_size=8192):
-                        f.write(data)
-                        pbar.update(len(data))
-                
-                print(f"Extracting {name}...")
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(os.path.join(target_dir, 'coco'))
+        # URLs for both images and annotations
+        urls = {
+            'train_images': 'http://images.cocodataset.org/zips/train2017.zip',
+            'val_images': 'http://images.cocodataset.org/zips/val2017.zip',
+            'annotations': 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
+        }
+        
+        for name, url in urls.items():
+            zip_path = os.path.join(target_dir, f'coco_{name}.zip')
+            if not os.path.exists(zip_path):
+                try:
+                    logger.info(f"Downloading COCO {name}...")
+                    response = requests.get(url, stream=True)
+                    response.raise_for_status()
+                    total_size = int(response.headers.get('content-length', 0))
                     
-            except Exception as e:
-                print(f"Error downloading {name}: {e}")
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
-                return False
-    return True
+                    with open(zip_path, 'wb') as f, tqdm(total=total_size, unit='B', unit_scale=True) as pbar:
+                        for data in response.iter_content(chunk_size=8192):
+                            f.write(data)
+                            pbar.update(len(data))
+                    
+                    logger.info(f"Extracting {name}...")
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(os.path.join(target_dir, 'coco'))
+                        
+                except Exception as e:
+                    logger.error(f"Error downloading {name}: {e}")
+                    if os.path.exists(zip_path):
+                        os.remove(zip_path)
+                    return False
+        return True
+    except Exception as e:
+        logger.error(f"Error in COCO dataset download: {e}")
+        return False
 
 def validate_coco_structure(coco_dir):
     """Validate COCO dataset directory structure and contents"""
@@ -350,76 +366,85 @@ def check_coco_dataset(coco_dir: str) -> bool:
     return True
 
 def prepare_combined_dataset() -> None:
-    """Prepare combined COCO and license plate dataset"""
-    logger.info("=== Starting Dataset Preparation ===")
-    
-    # Create combined dataset directories
-    logger.info("Step 1/4: Creating directory structure...")
-    combined_dir = './data/combined'
-    coco_dir = './data/coco'
-    
-    for split in ['train', 'val']:
-        os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
-        os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
-    logger.success("✓ Directory structure created")
+    try:
+        logger.info("=== Starting Dataset Preparation ===")
+        
+        # Create combined dataset directories
+        logger.info("Step 1/4: Creating directory structure...")
+        combined_dir = './data/combined'
+        coco_dir = './data/coco'
+        
+        for split in ['train', 'val']:
+            os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
+            os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
+        logger.success("✓ Directory structure created")
 
-    # Check if COCO dataset already exists
-    logger.info("Step 2/4: Processing COCO dataset...")
-    if not check_coco_dataset(coco_dir):
-        logger.warning("COCO dataset check failed, running diagnostics...")
-        diagnose_coco_dataset(coco_dir)  # Add diagnostic info before failing
-        logger.info("   - COCO dataset not found, downloading...")
-        if download_coco_subset('./data'):
-            if not validate_coco_structure(coco_dir):
-                diagnose_coco_dataset(coco_dir)  # Add diagnostic info after failed validation
-                raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
-            logger.info("   - Converting COCO to YOLO format...")
-            convert_coco_to_yolo(coco_dir, combined_dir)
+        # Check if COCO dataset already exists
+        logger.info("Step 2/4: Processing COCO dataset...")
+        if not check_coco_dataset(coco_dir):
+            logger.warning("COCO dataset check failed, running diagnostics...")
+            diagnose_coco_dataset(coco_dir)  # Add diagnostic info before failing
+            logger.info("   - COCO dataset not found, downloading...")
+            if download_coco_subset('./data'):
+                if not validate_coco_structure(coco_dir):
+                    diagnose_coco_dataset(coco_dir)  # Add diagnostic info after failed validation
+                    raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
+                logger.info("   - Converting COCO to YOLO format...")
+                convert_coco_to_yolo(coco_dir, combined_dir)
+            else:
+                raise RuntimeError("Failed to download COCO dataset")
         else:
-            raise RuntimeError("Failed to download COCO dataset")
-    else:
-        logger.info("   - COCO dataset found, converting to YOLO format...")
-        convert_coco_to_yolo(coco_dir, combined_dir)
-    logger.info("✓ COCO dataset processed")
+            logger.info("   - COCO dataset found, converting to YOLO format...")
+            convert_coco_to_yolo(coco_dir, combined_dir)
+        logger.info("✓ COCO dataset processed")
 
-    # Check if combined dataset already exists
-    logger.info("Step 3/4: Checking existing combined dataset...")
-    if os.path.exists(combined_dir):
-        try:
-            validate_dataset_contents(combined_dir)
-            logger.info("✓ Existing combined dataset is valid")
-            return
-        except Exception as e:
-            logger.warning(f"   - Existing dataset invalid: {e}")
-            logger.info("   - Will recreate combined dataset")
-    
-    # Copy license plate data with prefix to avoid conflicts
-    logger.info("Step 4/4: Processing license plate data...")
-    total_copied = 0
-    for split in ['train', 'val']:
-        images_dir = f'images/{split}'
-        labels_dir = f'labels/{split}'
-        if os.path.exists(images_dir) and os.path.exists(labels_dir):
-            label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
-            
-            with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
-                for label_file in label_files:
-                    img_base = label_file.replace('.txt', '')
-                    img_extensions = ['.jpg', '.jpeg', '.png']
-                    img_file = None
-                    for ext in img_extensions:
-                        if os.path.exists(os.path.join(images_dir, img_base + ext)):
-                            img_file = img_base + ext
-                            break
-                    
-                    if img_file:
-                        os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
-                        os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
-                        total_copied += 1
-                    pbar.update(1)
-    
-    logger.info(f"✓ License plate data processed ({total_copied} pairs copied)")
-    logger.info("=== Dataset Preparation Complete ===\n")
+        # Check if combined dataset already exists
+        logger.info("Step 3/4: Checking existing combined dataset...")
+        if os.path.exists(combined_dir):
+            try:
+                validate_dataset_contents(combined_dir)
+                logger.info("✓ Existing combined dataset is valid")
+                return
+            except Exception as e:
+                logger.warning(f"   - Existing dataset invalid: {e}")
+                logger.info("   - Will recreate combined dataset")
+        
+        # Copy license plate data with prefix to avoid conflicts
+        logger.info("Step 4/4: Processing license plate data...")
+        total_copied = 0
+        for split in ['train', 'val']:
+            images_dir = f'images/{split}'
+            labels_dir = f'labels/{split}'
+            if os.path.exists(images_dir) and os.path.exists(labels_dir):
+                label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
+                
+                with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
+                    for label_file in label_files:
+                        img_base = label_file.replace('.txt', '')
+                        img_extensions = ['.jpg', '.jpeg', '.png']
+                        img_file = None
+                        for ext in img_extensions:
+                            if os.path.exists(os.path.join(images_dir, img_base + ext)):
+                                img_file = img_base + ext
+                                break
+                        
+                        if img_file:
+                            os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
+                            os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
+                            total_copied += 1
+                        pbar.update(1)
+        
+        logger.info(f"✓ License plate data processed ({total_copied} pairs copied)")
+        logger.info("=== Dataset Preparation Complete ===\n")
+        
+        # Memory cleanup
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as e:
+        logger.error(f"Error in dataset preparation: {e}")
+        raise
 
 def validate_dataset(data_dir: str) -> None:
     """Validate combined dataset structure"""
@@ -475,12 +500,12 @@ def cleanup_downloads():
         logger.warning(f"Error cleaning up downloads: {e}")
 
 class TrainingProgressCallback:
-    def __init__(self):
-        self.best_map = 0
-        self.best_epoch = 0
-        self.start_time = None
+    def __init__(self) -> None:
+        self.best_map: float = 0
+        self.best_epoch: int = 0
+        self.start_time: Optional[float] = None
         
-    def __call__(self, epoch, metrics, context):
+    def __call__(self, epoch: int, metrics: Dict[str, float], context: Any) -> None:
         if self.start_time is None:
             self.start_time = time.time()
             
@@ -534,8 +559,52 @@ def validate_paths(*paths: str) -> None:
         if not os.path.isabs(path):
             raise ValueError(f"Path must be absolute: {path}")
 
+def validate_cuda_setup() -> None:
+    """Validate CUDA setup and provide recommendations"""
+    if not torch.cuda.is_available():
+        logger.warning("CUDA is not available - training will be slow!")
+        return
+        
+    # Check CUDA version
+    cuda_version = torch.version.cuda
+    if cuda_version is None:
+        logger.warning("CUDA version could not be determined")
+    else:
+        logger.info(f"CUDA version: {cuda_version}")
+        
+    # Check available GPU memory
+    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+    logger.info(f"Available GPU memory: {gpu_memory:.2f} GB")
+    
+    # Set optimal CUDA settings
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+def monitor_gpu():
+    """Monitor GPU temperature and utilization"""
+    if torch.cuda.is_available():
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            logger.info(f"GPU Temperature: {temp}°C, Utilization: {util.gpu}%")
+        except Exception as e:
+            logger.warning(f"Could not monitor GPU metrics: {e}")
+
+def verify_checksum(file_path: str, expected_hash: str) -> bool:
+    """Verify file checksum"""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest() == expected_hash
+
 def main():
     try:
+        validate_cuda_setup()
         # Check GPU availability
         device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {device}")
@@ -823,11 +892,13 @@ def main():
         wandb.finish()
         raise
     finally:
-        # Always try to cleanup
-        try:
-            cleanup_downloads()
-        except Exception as e:
-            logger.warning(f"Error during cleanup: {e}")
+        # Cleanup
+        cleanup_downloads()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        # Close wandb run if it exists
+        if wandb.run is not None:
+            wandb.finish()
 
 if __name__ == "__main__":
     main()
