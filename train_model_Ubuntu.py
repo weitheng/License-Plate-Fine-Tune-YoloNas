@@ -22,24 +22,31 @@ class KnowledgeDistillationLoss(torch.nn.Module):
         self.teacher_outputs = None  # Store teacher outputs here
         
     def set_teacher_outputs(self, outputs):
+        """Store teacher model outputs for distillation"""
         self.teacher_outputs = outputs
         
     def forward(self, student_outputs, targets):
+        """
+        Forward pass for knowledge distillation loss
+        Args:
+            student_outputs: Output from student model
+            targets: Ground truth targets
+        """
         # Standard student loss
         student_loss = self.student_loss_fn(student_outputs, targets)
         
-        # If no teacher outputs, return only student loss
+        # If no teacher outputs available, return only student loss
         if self.teacher_outputs is None:
             return student_loss
-        
-        # Distillation loss
+            
+        # Calculate distillation loss using stored teacher outputs
         distillation_loss = torch.nn.functional.kl_div(
             torch.nn.functional.log_softmax(student_outputs / self.temperature, dim=1),
             torch.nn.functional.softmax(self.teacher_outputs / self.temperature, dim=1),
             reduction='batchmean'
         ) * (self.temperature ** 2)
         
-        # Combined loss
+        # Combine losses
         total_loss = (1 - self.alpha) * student_loss + self.alpha * distillation_loss
         return total_loss
 
