@@ -13,11 +13,51 @@ import wandb
 from yolo_training_utils import assess_hardware_capabilities, load_dataset_config, setup_directories
 from torch.optim.lr_scheduler import OneCycleLR
 
+class KnowledgeDistillationLoss(torch.nn.Module):
+    def __init__(self, student_loss_fn, temperature=4.0, alpha=0.5):
+        super().__init__()
+        self.student_loss_fn = student_loss_fn
+        self.temperature = temperature
+        self.alpha = alpha
+        
+    def forward(self, student_outputs, targets, teacher_outputs):
+        # Standard student loss
+        student_loss = self.student_loss_fn(student_outputs, targets)
+        
+        # Distillation loss
+        distillation_loss = torch.nn.functional.kl_div(
+            torch.nn.functional.log_softmax(student_outputs / self.temperature, dim=1),
+            torch.nn.functional.softmax(teacher_outputs / self.temperature, dim=1),
+            reduction='batchmean'
+        ) * (self.temperature ** 2)
+        
+        # Combined loss
+        total_loss = (1 - self.alpha) * student_loss + self.alpha * distillation_loss
+        return total_loss
+
+class DistillationTrainer(Trainer):
+    def __init__(self, teacher_model, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.teacher_model = teacher_model.to(self.device)
+        
+    def train_batch(self, batch_idx, batch_data, **kwargs):
+        images, targets = batch_data
+        images = images.to(self.device)
+        
+        # Get teacher predictions
+        with torch.no_grad():
+            teacher_outputs = self.teacher_model(images)
+        
+        # Add teacher outputs to targets
+        targets['teacher_outputs'] = teacher_outputs
+        
+        # Call parent's train_batch
+        return super().train_batch(batch_idx, (images, targets), **kwargs)
 
 def main():
     # Initialize wandb
     wandb.login()
-    wandb.init(project="license-plate-detection", name="yolo-nas-s-finetuning")
+    wandb.init(project="license-plate-detection", name="yolo-nas-s-distillation")
 
     # Setup directories
     checkpoint_dir, export_dir = setup_directories("./")
@@ -28,6 +68,17 @@ def main():
 
     # Get optimal hardware settings
     hw_params = assess_hardware_capabilities()
+
+    # Fix download URLs for YOLO-NAS S model
+    print("Fixing model download URLs...")
+    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
+    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
+
+    # Setup teacher model
+    teacher_model = models.get(Models.YOLO_NAS_L, pretrained_weights="coco")
+    teacher_model.eval()
+    for param in teacher_model.parameters():
+        param.requires_grad = False
 
     # Prepare dataloaders with data augmentation
     train_data = coco_detection_yolo_format_train(
@@ -40,7 +91,7 @@ def main():
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
-            'num_workers': 4,
+            'num_workers': 4,  # Hardcoded num_workers
             'shuffle': True,
             'pin_memory': torch.cuda.is_available(),
             'drop_last': True  # Helps with batch normalization
@@ -57,28 +108,28 @@ def main():
         },
         dataloader_params={
             'batch_size': hw_params['batch_size'],
-            'num_workers': 4,
+            'num_workers': 4,  # Hardcoded num_workers
             'shuffle': False,
             'pin_memory': torch.cuda.is_available(),
             'drop_last': False
         }
     )
 
-    # Fix download URLs for YOLO-NAS S model
-    print("Fixing model download URLs...")
-    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
-    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
-
     # Define the YOLO-NAS-S model
     model = models.get(Models.YOLO_NAS_S, num_classes=len(dataset_config['names']))
 
-    # Define checkpoint directory
-    checkpoint_dir = os.path.abspath("./checkpoints")
-    os.makedirs(checkpoint_dir, exist_ok=True)  # Ensure the directory exists
-
-    # Define checkpoint directory
-    export_dir = os.path.abspath("./export")
-    os.makedirs(export_dir, exist_ok=True)  # Ensure the directory exists# Training parameters
+    # Create knowledge distillation loss
+    base_loss = PPYoloELoss(
+        use_static_assigner=False,
+        num_classes=len(dataset_config['names']),
+        reg_max=16,
+        iou_loss_weight=3.0
+    )
+    distillation_loss = KnowledgeDistillationLoss(
+        student_loss_fn=base_loss,
+        temperature=4.0,
+        alpha=0.5
+    )
 
     train_params = {
         'save_ckpt_after_epoch': True,
@@ -92,12 +143,8 @@ def main():
         'initial_lr': 1e-4,
         'lr_mode': 'cosine',  # Changed back to cosine
         'cosine_final_lr_ratio': 0.1,
-        'max_lr': 1e-4,  # Added for OneCycleLR
-        'dividing_factor': 10,  # Added for OneCycleLR
         'optimizer': 'AdamW',
-        'optimizer_params': {
-            'weight_decay': 0.001
-        },
+        'optimizer_params': {'weight_decay': 0.001},
         'zero_weight_decay_on_bias_and_bn': True,
         'ema': True,
         'ema_params': {
@@ -108,12 +155,7 @@ def main():
         'max_epochs': 65,
         'early_stopping_patience': 5,
         'mixed_precision': torch.cuda.is_available(),
-        'loss': PPYoloELoss(
-            use_static_assigner=False,
-            num_classes=len(dataset_config['names']),
-            reg_max=16,
-            iou_loss_weight=3.0
-        ),
+        'loss': distillation_loss,
         'valid_metrics_list': [
             DetectionMetrics_050(
                 score_thres=0.3,
@@ -135,15 +177,18 @@ def main():
             'save_tensorboard_remote': True,
             'save_checkpoint_as_artifact': True,
             'project_name': 'license-plate-detection',
-            'run_name': 'yolo-nas-s-finetuning'
+            'run_name': 'yolo-nas-s-distillation'
         },
         'dropout': 0.1,
-        'mixed_precision': True,
         'label_smoothing': 0.1
     }
 
-    # Initialize trainer and start training
-    trainer = Trainer(experiment_name='license_plate_detection', ckpt_root_dir=checkpoint_dir)
+    # Initialize trainer with teacher model
+    trainer = DistillationTrainer(
+        teacher_model=teacher_model,
+        experiment_name='license_plate_detection',
+        ckpt_root_dir=checkpoint_dir
+    )
 
     trainer.train(
         model=model,
