@@ -54,6 +54,29 @@ class DistillationTrainer(Trainer):
         # Call parent's train_batch
         return super().train_batch(batch_idx, (images, targets), **kwargs)
 
+def download_model_weights(model_name, target_path):
+    """Download model weights from alternative sources if primary fails"""
+    urls = {
+        'YOLO_NAS_L': [
+            'https://sg-hub-nv.s3.amazonaws.com/models/yolo_nas_l_coco.pth',
+            'https://storage.googleapis.com/super-gradients-models/yolo_nas_l_coco.pth'
+        ],
+        'YOLO_NAS_S': [
+            'https://sg-hub-nv.s3.amazonaws.com/models/yolo_nas_s_coco.pth',
+            'https://storage.googleapis.com/super-gradients-models/yolo_nas_s_coco.pth'
+        ]
+    }
+    
+    for url in urls.get(model_name, []):
+        try:
+            print(f"Attempting to download from: {url}")
+            os.system(f"wget {url} -O {target_path}")
+            if os.path.exists(target_path):
+                return True
+        except Exception as e:
+            print(f"Failed to download from {url}: {e}")
+    return False
+
 def main():
     # Initialize wandb
     wandb.login()
@@ -69,10 +92,25 @@ def main():
     # Get optimal hardware settings
     hw_params = assess_hardware_capabilities()
 
-    # Fix download URLs for YOLO-NAS S model
+    # Create cache directory if it doesn't exist
+    cache_dir = os.path.expanduser('~/.cache/torch/hub/checkpoints/')
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Download model weights if needed
+    l_model_path = os.path.join(cache_dir, 'yolo_nas_l_coco.pth')
+    s_model_path = os.path.join(cache_dir, 'yolo_nas_s_coco.pth')
+
+    if not os.path.exists(l_model_path):
+        download_model_weights('YOLO_NAS_L', l_model_path)
+    if not os.path.exists(s_model_path):
+        download_model_weights('YOLO_NAS_S', s_model_path)
+
+    # Fix download URLs for YOLO-NAS models
     print("Fixing model download URLs...")
-    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
-    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
+    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
+    os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
+    os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
+    os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
 
     # Setup teacher model with COCO weights
     teacher_model = models.get(Models.YOLO_NAS_L, pretrained_weights="coco")
