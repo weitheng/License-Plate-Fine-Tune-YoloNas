@@ -20,16 +20,54 @@ import logging
 from config import TrainingConfig
 from typing import Optional, List, Dict, Any, Tuple
 import time
+import coloredlogs
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('training.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+def setup_logging():
+    """Setup logging with colored output for terminal and file output"""
+    # Format for both file and terminal
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    
+    # Setup file handler
+    file_handler = logging.FileHandler('training.log')
+    file_handler.setFormatter(logging.Formatter(log_format))
+    
+    # Get the root logger and clear any existing handlers
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # Remove any existing handlers
+    logger.handlers = []
+    
+    # Add the file handler
+    logger.addHandler(file_handler)
+    
+    # Install colored logs for terminal
+    coloredlogs.install(
+        level='INFO',
+        logger=logger,
+        fmt=log_format,
+        level_styles={
+            'info': {'color': 'white'},
+            'warning': {'color': 'yellow'},
+            'error': {'color': 'red', 'bold': True},
+            'success': {'color': 'green', 'bold': True}  # For checkmarks
+        },
+        field_styles={
+            'asctime': {'color': 'cyan'},
+            'levelname': {'color': 'magenta', 'bold': True}
+        }
+    )
+    
+    return logger
+
+# Add success level for checkmarks
+logging.addLevelName(25, 'SUCCESS')
+def success(self, message, *args, **kwargs):
+    if self.isEnabledFor(25):
+        self._log(25, message, args, **kwargs)
+logging.Logger.success = success
+
+logger = setup_logging()
 
 def download_model_weights(model_name: str, target_path: str) -> bool:
     """Download model weights from alternative sources if primary fails"""
@@ -172,57 +210,70 @@ def check_coco_dataset(coco_dir: str) -> bool:
 
 def prepare_combined_dataset() -> None:
     """Prepare combined COCO and license plate dataset"""
+    logger.info("=== Starting Dataset Preparation ===")
+    
     # Create combined dataset directories
+    logger.info("Step 1/4: Creating directory structure...")
     combined_dir = './data/combined'
     coco_dir = './data/coco'
     
     for split in ['train', 'val']:
         os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
         os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
+    logger.success("✓ Directory structure created")
 
     # Check if COCO dataset already exists
+    logger.info("Step 2/4: Processing COCO dataset...")
     if not check_coco_dataset(coco_dir):
-        logger.info("COCO dataset not found or incomplete. Downloading...")
+        logger.info("   - COCO dataset not found, downloading...")
         if download_coco_subset('./data'):
+            logger.info("   - Converting COCO to YOLO format...")
             convert_coco_to_yolo(coco_dir, combined_dir)
         else:
             raise RuntimeError("Failed to download COCO dataset")
     else:
-        logger.info("COCO dataset found. Skipping download.")
-        # Just convert existing COCO data to YOLO format
+        logger.info("   - COCO dataset found, converting to YOLO format...")
         convert_coco_to_yolo(coco_dir, combined_dir)
+    logger.info("✓ COCO dataset processed")
 
     # Check if combined dataset already exists
+    logger.info("Step 3/4: Checking existing combined dataset...")
     if os.path.exists(combined_dir):
-        logger.info("Checking existing combined dataset...")
         try:
             validate_dataset_contents(combined_dir)
-            logger.info("Existing combined dataset is valid.")
+            logger.info("✓ Existing combined dataset is valid")
             return
         except Exception as e:
-            logger.warning(f"Existing combined dataset is invalid: {e}")
-            logger.info("Will recreate combined dataset...")
+            logger.warning(f"   - Existing dataset invalid: {e}")
+            logger.info("   - Will recreate combined dataset")
     
     # Copy license plate data with prefix to avoid conflicts
-    logger.info("Copying license plate data to combined dataset...")
+    logger.info("Step 4/4: Processing license plate data...")
+    total_copied = 0
     for split in ['train', 'val']:
         images_dir = f'images/{split}'
         labels_dir = f'labels/{split}'
         if os.path.exists(images_dir) and os.path.exists(labels_dir):
             label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
             
-            for label_file in label_files:
-                img_base = label_file.replace('.txt', '')
-                img_extensions = ['.jpg', '.jpeg', '.png']
-                img_file = None
-                for ext in img_extensions:
-                    if os.path.exists(os.path.join(images_dir, img_base + ext)):
-                        img_file = img_base + ext
-                        break
-                
-                if img_file:
-                    os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
-                    os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
+            with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
+                for label_file in label_files:
+                    img_base = label_file.replace('.txt', '')
+                    img_extensions = ['.jpg', '.jpeg', '.png']
+                    img_file = None
+                    for ext in img_extensions:
+                        if os.path.exists(os.path.join(images_dir, img_base + ext)):
+                            img_file = img_base + ext
+                            break
+                    
+                    if img_file:
+                        os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
+                        os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
+                        total_copied += 1
+                    pbar.update(1)
+    
+    logger.info(f"✓ License plate data processed ({total_copied} pairs copied)")
+    logger.info("=== Dataset Preparation Complete ===\n")
 
 def validate_dataset(data_dir: str) -> None:
     """Validate combined dataset structure"""
@@ -293,22 +344,33 @@ class TrainingProgressCallback:
 
 def main():
     try:
+        logger.info("Starting training pipeline...")
+        
         # Prepare dataset first
         prepare_combined_dataset()
         
         # Validate dataset structure
+        logger.info("Validating final dataset structure...")
         validate_dataset('./data/combined')
+        validate_dataset_contents('./data/combined')
+        logger.info("✓ Dataset validation complete")
         
         # Initialize wandb
+        logger.info("Initializing Weights & Biases...")
         wandb.login()
         wandb.init(project="license-plate-detection", name="yolo-nas-s-coco-finetuning")
+        logger.info("✓ Weights & Biases initialized")
 
         # Setup directories
+        logger.info("Setting up directories...")
         checkpoint_dir, export_dir = setup_directories("./")
+        logger.info(f"✓ Directories set up: {checkpoint_dir}, {export_dir}")
 
         # Load dataset configuration
+        logger.info("Loading dataset configuration...")
         yaml_path = "license_plate_dataset.yaml"
         dataset_config = load_dataset_config(yaml_path)
+        logger.info("✓ Dataset configuration loaded")
 
         # Get optimal hardware settings
         hw_params = assess_hardware_capabilities()
@@ -318,13 +380,17 @@ def main():
         os.makedirs(cache_dir, exist_ok=True)
 
         # Download model weights if needed
+        logger.info("Checking model weights...")
         l_model_path = os.path.join(cache_dir, 'yolo_nas_l_coco.pth')
         s_model_path = os.path.join(cache_dir, 'yolo_nas_s_coco.pth')
 
         if not os.path.exists(l_model_path):
+            logger.info("Downloading YOLO-NAS-L weights...")
             download_model_weights('YOLO_NAS_L', l_model_path)
         if not os.path.exists(s_model_path):
+            logger.info("Downloading YOLO-NAS-S weights...")
             download_model_weights('YOLO_NAS_S', s_model_path)
+        logger.info("✓ Model weights ready")
 
         # Fix download URLs for YOLO-NAS models
         print("Fixing model download URLs...")
