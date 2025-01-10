@@ -132,6 +132,121 @@ def download_coco_subset(target_dir, num_images=70000):
                 return False
     return True
 
+def validate_coco_structure(coco_dir):
+    """Validate COCO dataset directory structure and contents"""
+    logger.info("Validating COCO dataset structure...")
+    
+    # Check main directories
+    required_dirs = [
+        os.path.join(coco_dir, 'images', 'train2017'),
+        os.path.join(coco_dir, 'images', 'val2017'),
+        os.path.join(coco_dir, 'annotations')
+    ]
+    
+    for dir_path in required_dirs:
+        if not os.path.exists(dir_path):
+            logger.error(f"Missing directory: {dir_path}")
+            return False
+            
+    # Check annotation files
+    anno_files = [
+        os.path.join(coco_dir, 'annotations', 'instances_train2017.json'),
+        os.path.join(coco_dir, 'annotations', 'instances_val2017.json')
+    ]
+    
+    for anno_file in anno_files:
+        if not os.path.exists(anno_file):
+            logger.error(f"Missing annotation file: {anno_file}")
+            return False
+    
+    # Check if image directories have content
+    for split in ['train2017', 'val2017']:
+        img_dir = os.path.join(coco_dir, 'images', split)
+        if not os.listdir(img_dir):
+            logger.error(f"Image directory is empty: {img_dir}")
+            return False
+            
+        # Sample check of a few images
+        coco = COCO(os.path.join(coco_dir, 'annotations', f'instances_{split}.json'))
+        img_ids = coco.getImgIds()[:5]  # Check first 5 images
+        
+        for img_id in img_ids:
+            img_info = coco.loadImgs(img_id)[0]
+            img_path = os.path.join(img_dir, img_info['file_name'])
+            if not os.path.exists(img_path):
+                logger.error(f"Sample image not found: {img_path}")
+                logger.error(f"Expected path: {img_path}")
+                logger.error(f"Directory contents: {os.listdir(img_dir)[:5]}")  # Show first 5 files
+                return False
+    
+    logger.success("✓ COCO dataset structure is valid")
+    return True
+    
+def diagnose_coco_dataset(coco_dir):
+    """Diagnose issues with existing COCO dataset without downloading again"""
+    logger.info("=== Running COCO Dataset Diagnosis ===")
+    
+    # Check directory structure
+    logger.info("Checking directory structure...")
+    dir_structure = {
+        'images/train2017': os.path.join(coco_dir, 'images', 'train2017'),
+        'images/val2017': os.path.join(coco_dir, 'images', 'val2017'),
+        'annotations': os.path.join(coco_dir, 'annotations')
+    }
+    
+    for name, path in dir_structure.items():
+        if not os.path.exists(path):
+            logger.error(f"Missing directory: {path}")
+            continue
+        
+        # Check if directory is empty
+        files = os.listdir(path)
+        logger.info(f"{name}: {len(files)} files found")
+        if files:
+            logger.info(f"Sample files in {name}: {files[:3]}")
+    
+    # Check annotation files
+    logger.info("\nChecking annotation files...")
+    anno_files = ['instances_train2017.json', 'instances_val2017.json']
+    for anno_file in anno_files:
+        anno_path = os.path.join(coco_dir, 'annotations', anno_file)
+        if not os.path.exists(anno_path):
+            logger.error(f"Missing annotation file: {anno_path}")
+            continue
+            
+        # Try to load and parse annotation file
+        try:
+            coco = COCO(anno_path)
+            img_ids = coco.getImgIds()
+            logger.info(f"{anno_file}: {len(img_ids)} images referenced")
+            
+            # Check first few images
+            for img_id in img_ids[:3]:
+                img_info = coco.loadImgs(img_id)[0]
+                img_path = os.path.join(coco_dir, 'images', 
+                                      'train2017' if 'train' in anno_file else 'val2017',
+                                      img_info['file_name'])
+                if not os.path.exists(img_path):
+                    logger.error(f"Referenced image not found: {img_path}")
+                    logger.info(f"Image info from annotation: {img_info}")
+                else:
+                    logger.info(f"Successfully found image: {img_info['file_name']}")
+        except Exception as e:
+            logger.error(f"Error parsing {anno_file}: {str(e)}")
+    
+    logger.info("\nChecking file permissions...")
+    for name, path in dir_structure.items():
+        if os.path.exists(path):
+            try:
+                test_file = os.path.join(path, os.listdir(path)[0])
+                with open(test_file, 'rb') as f:
+                    pass
+                logger.info(f"{name}: Files are readable")
+            except Exception as e:
+                logger.error(f"{name}: Permission error - {str(e)}")
+    
+    logger.info("=== Diagnosis Complete ===")
+    
 def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
     """Convert COCO annotations to YOLO format and copy corresponding images"""
     try:
@@ -238,6 +353,8 @@ def prepare_combined_dataset() -> None:
     if not check_coco_dataset(coco_dir):
         logger.info("   - COCO dataset not found, downloading...")
         if download_coco_subset('./data'):
+            if not validate_coco_structure(coco_dir):
+                raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
             logger.info("   - Converting COCO to YOLO format...")
             convert_coco_to_yolo(coco_dir, combined_dir)
         else:
@@ -409,7 +526,7 @@ def main():
         logger.info("✓ Model weights ready")
 
         # Fix download URLs for YOLO-NAS models
-        print("Fixing model download URLs...")
+    print("Fixing model download URLs...")
         os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
         os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
         os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
@@ -437,47 +554,47 @@ def main():
         config = TrainingConfig.from_gpu_memory(gpu_memory_gb)
         
         # Update training parameters with absolute paths
-        train_params = {
-            'save_ckpt_after_epoch': True,
+    train_params = {
+        'save_ckpt_after_epoch': True,
             'save_ckpt_dir': checkpoint_dir,  # Already absolute
-            'resume': False,
-            'silent_mode': False,
-            'average_best_models': True,
-            'warmup_mode': 'LinearEpochLRWarmup',
-            'warmup_initial_lr': 1e-6,
+        'resume': False,
+        'silent_mode': False,
+        'average_best_models': True,
+        'warmup_mode': 'LinearEpochLRWarmup',
+        'warmup_initial_lr': 1e-6,
             'lr_warmup_epochs': config.warmup_epochs,
             'initial_lr': config.initial_lr,
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
             'early_stopping_patience': config.early_stopping_patience,
-            'mixed_precision': torch.cuda.is_available(),
+        'mixed_precision': torch.cuda.is_available(),
             'loss': loss_fn,
-            'valid_metrics_list': [
-                DetectionMetrics_050(
+        'valid_metrics_list': [
+            DetectionMetrics_050(
                     score_thres=config.confidence_threshold,
                     top_k_predictions=config.max_predictions,
                     num_cls=81,
-                    normalize_targets=True,
-                    post_prediction_callback=PPYoloEPostPredictionCallback(
+                normalize_targets=True,
+                post_prediction_callback=PPYoloEPostPredictionCallback(
                         score_threshold=config.confidence_threshold,
                         nms_threshold=config.nms_threshold,
                         nms_top_k=config.max_predictions,
                         max_predictions=config.max_predictions
-                    )
                 )
-            ],
-            'metric_to_watch': 'mAP@0.50',
-            'sg_logger': 'wandb_sg_logger',
-            'sg_logger_params': {
-                'save_checkpoints_remote': True,
-                'save_tensorboard_remote': True,
-                'save_checkpoint_as_artifact': True,
-                'project_name': 'license-plate-detection',
+            )
+        ],
+        'metric_to_watch': 'mAP@0.50',
+        'sg_logger': 'wandb_sg_logger',
+        'sg_logger_params': {
+            'save_checkpoints_remote': True,
+            'save_tensorboard_remote': True,
+            'save_checkpoint_as_artifact': True,
+            'project_name': 'license-plate-detection',
                 'run_name': 'yolo-nas-s-coco-finetuning'
             },
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
-            'resume_path': os.path.join(checkpoint_dir, 'latest_checkpoint.pth'),  # Using absolute path
+            'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),  # Using absolute path
             'resume_strict_load': False,
             'optimizer_params': {'weight_decay': config.weight_decay}
         }
@@ -533,44 +650,53 @@ def main():
         # Validate dataset contents before training
         validate_dataset_contents('./data/combined')
         
+    checkpoint_path = os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth')
+    checkpoint_dir_path = os.path.dirname(checkpoint_path)
+    os.makedirs(checkpoint_dir_path, exist_ok=True)
+    logger.info(f"Using checkpoint path: {checkpoint_path}")
+
+    if not os.access(checkpoint_dir_path, os.W_OK):
+        logger.error(f"No write permission for checkpoint directory: {checkpoint_dir_path}")
+        raise RuntimeError("Cannot write to checkpoint directory")
+
         # Train model
-        trainer.train(
-            model=model,
-            training_params=train_params,
-            train_loader=train_data,
-            valid_loader=val_data
-        )
+    trainer.train(
+        model=model,
+        training_params=train_params,
+        train_loader=train_data,
+        valid_loader=val_data
+    )
         
         # Cleanup downloaded files
         cleanup_downloads()
-        
-        # Save final model checkpoint
+
+    # Save final model checkpoint
         final_checkpoint_path = os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth')
-        trainer.save_checkpoint(model_state=model.state_dict(), optimizer_state=None, scheduler_state=None, checkpoint_path=final_checkpoint_path)
+    trainer.save_checkpoint(model_state=model.state_dict(), optimizer_state=None, scheduler_state=None, checkpoint_path=final_checkpoint_path)
 
         # Generate complete label map file
-        label_map_path = os.path.join(checkpoint_dir, 'label_map.txt')
-        with open(label_map_path, 'w') as f:
-            for idx, class_name in enumerate(dataset_config['names']):
-                f.write(f"{idx}: {class_name}\n")
+    label_map_path = os.path.join(checkpoint_dir, 'label_map.txt')
+    with open(label_map_path, 'w') as f:
+        for idx, class_name in enumerate(dataset_config['names']):
+            f.write(f"{idx}: {class_name}\n")
 
         # Export model to ONNX format with reduced size for efficient inference
         onnx_path = os.path.join(export_dir, "yolo_nas_s_coco_license_plate.onnx")
-        model.export(
-            onnx_path,
-            output_predictions_format="FLAT_FORMAT",
+    model.export(
+        onnx_path,
+        output_predictions_format="FLAT_FORMAT",
             max_predictions_per_image=config.max_predictions,
             confidence_threshold=config.confidence_threshold,
             input_image_shape=config.export_image_size  # Using smaller size for inference
-        )
+    )
 
-        print(f"\nTraining completed!")
-        print(f"Checkpoint saved to: {final_checkpoint_path}")
-        print(f"Label map saved to: {label_map_path}")
-        print(f"ONNX model exported to: {onnx_path}")
+    print(f"\nTraining completed!")
+    print(f"Checkpoint saved to: {final_checkpoint_path}")
+    print(f"Label map saved to: {label_map_path}")
+    print(f"ONNX model exported to: {onnx_path}")
 
-        # Finish wandb session
-        wandb.finish()
+    # Finish wandb session
+    wandb.finish()
 
     except Exception as e:
         logger.error(f"Error during training: {e}")
