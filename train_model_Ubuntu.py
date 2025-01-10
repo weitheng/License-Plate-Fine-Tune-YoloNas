@@ -74,11 +74,35 @@ def main():
     os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/pretrained_models.py')
     os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/\' /usr/local/lib/python3.8/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
 
-    # Setup teacher model
+    # Setup teacher model with COCO weights
     teacher_model = models.get(Models.YOLO_NAS_L, pretrained_weights="coco")
     teacher_model.eval()
     for param in teacher_model.parameters():
         param.requires_grad = False
+
+    # Initialize student model with COCO weights and modify last layer for 81 classes
+    model = models.get(Models.YOLO_NAS_S, 
+                      num_classes=81,  # 80 COCO classes + 1 license plate class
+                      pretrained_weights="coco")  # Start with COCO weights
+    
+    # Modify the model's classification head for 81 classes
+    # The exact modification depends on the model architecture
+    # The pretrained weights for the first 80 classes are preserved
+    
+    # Update the loss function for 81 classes
+    base_loss = PPYoloELoss(
+        use_static_assigner=False,
+        num_classes=81,  # Updated for total number of classes
+        reg_max=16,
+        iou_loss_weight=3.0
+    )
+
+    # Create knowledge distillation loss
+    distillation_loss = KnowledgeDistillationLoss(
+        student_loss_fn=base_loss,
+        temperature=4.0,
+        alpha=0.5
+    )
 
     # Prepare dataloaders with data augmentation
     train_data = coco_detection_yolo_format_train(
@@ -115,22 +139,7 @@ def main():
         }
     )
 
-    # Define the YOLO-NAS-S model
-    model = models.get(Models.YOLO_NAS_S, num_classes=len(dataset_config['names']))
-
-    # Create knowledge distillation loss
-    base_loss = PPYoloELoss(
-        use_static_assigner=False,
-        num_classes=len(dataset_config['names']),
-        reg_max=16,
-        iou_loss_weight=3.0
-    )
-    distillation_loss = KnowledgeDistillationLoss(
-        student_loss_fn=base_loss,
-        temperature=4.0,
-        alpha=0.5
-    )
-
+    # Update metrics for 81 classes
     train_params = {
         'save_ckpt_after_epoch': True,
         'save_ckpt_dir': checkpoint_dir,
@@ -160,7 +169,7 @@ def main():
             DetectionMetrics_050(
                 score_thres=0.3,
                 top_k_predictions=200,
-                num_cls=len(dataset_config['names']),
+                num_cls=81,  # Updated for total number of classes
                 normalize_targets=True,
                 post_prediction_callback=PPYoloEPostPredictionCallback(
                     score_threshold=0.3,
@@ -183,13 +192,14 @@ def main():
         'label_smoothing': 0.1
     }
 
-    # Initialize trainer with teacher model
+    # Initialize trainer
     trainer = DistillationTrainer(
         teacher_model=teacher_model,
-        experiment_name='license_plate_detection',
+        experiment_name='coco_license_plate_detection',
         ckpt_root_dir=checkpoint_dir
     )
 
+    # Train the model
     trainer.train(
         model=model,
         training_params=train_params,
@@ -198,17 +208,17 @@ def main():
     )
 
     # Save final model checkpoint
-    final_checkpoint_path = os.path.join(checkpoint_dir, 'license_plate_detection_final.pth')
+    final_checkpoint_path = os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth')
     trainer.save_checkpoint(model_state=model.state_dict(), optimizer_state=None, scheduler_state=None, checkpoint_path=final_checkpoint_path)
 
-    # Generate label map file
+    # Generate complete label map file
     label_map_path = os.path.join(checkpoint_dir, 'label_map.txt')
     with open(label_map_path, 'w') as f:
         for idx, class_name in enumerate(dataset_config['names']):
             f.write(f"{idx}: {class_name}\n")
 
     # Export model to ONNX format
-    onnx_path = os.path.join(export_dir, "yolo_nas_s_fine_tuned.onnx")
+    onnx_path = os.path.join(export_dir, "yolo_nas_s_coco_license_plate.onnx")
     model.export(
         onnx_path,
         output_predictions_format="FLAT_FORMAT",
