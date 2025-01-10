@@ -62,20 +62,13 @@ def load_dataset_config(config_path: str) -> dict:
     
     return config
 
-def setup_directories(base_dir: str) -> Tuple[str, str]:
-    """
-    Create necessary directories for training.
-    
-    Args:
-        base_dir: Base directory for the project
-    
-    Returns:
-        Tuple of (checkpoint_dir, export_dir)
-    """
-    checkpoint_dir = os.path.join(base_dir, "checkpoints")
-    export_dir = os.path.join(base_dir, "exported_models")
+def setup_directories(base_path: str) -> Tuple[str, str]:
+    """Setup checkpoint and export directories"""
+    base_path = os.path.abspath(base_path)
+    checkpoint_dir = os.path.join(base_path, 'checkpoints')
+    export_dir = os.path.join(base_path, 'export')
     
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(export_dir, exist_ok=True)
     
-    return checkpoint_dir, export_dir
+    return os.path.abspath(checkpoint_dir), os.path.abspath(export_dir)
