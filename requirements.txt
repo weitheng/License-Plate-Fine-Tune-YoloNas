@@ -12,3 +12,6 @@ tqdm
 
 # OpenCV
 opencv-python
+
+# Colored logs
+coloredlogs>=15.0.1
