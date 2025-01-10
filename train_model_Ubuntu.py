@@ -19,22 +19,23 @@ class KnowledgeDistillationLoss(torch.nn.Module):
         self.student_loss_fn = student_loss_fn
         self.temperature = temperature
         self.alpha = alpha
+        self.teacher_outputs = None  # Store teacher outputs here
+        
+    def set_teacher_outputs(self, outputs):
+        self.teacher_outputs = outputs
         
     def forward(self, student_outputs, targets):
-        # Get teacher outputs from targets dict
-        teacher_outputs = targets.pop('teacher_outputs', None)
-        
         # Standard student loss
         student_loss = self.student_loss_fn(student_outputs, targets)
         
         # If no teacher outputs, return only student loss
-        if teacher_outputs is None:
+        if self.teacher_outputs is None:
             return student_loss
         
         # Distillation loss
         distillation_loss = torch.nn.functional.kl_div(
             torch.nn.functional.log_softmax(student_outputs / self.temperature, dim=1),
-            torch.nn.functional.softmax(teacher_outputs / self.temperature, dim=1),
+            torch.nn.functional.softmax(self.teacher_outputs / self.temperature, dim=1),
             reduction='batchmean'
         ) * (self.temperature ** 2)
         
@@ -55,12 +56,12 @@ class DistillationTrainer(Trainer):
         with torch.no_grad():
             teacher_outputs = self.teacher_model(images)
         
-        # Create a copy of targets to avoid modifying the original
-        targets_with_teacher = targets.copy()
-        targets_with_teacher['teacher_outputs'] = teacher_outputs
+        # Set teacher outputs in the loss function
+        if isinstance(self.criterion, KnowledgeDistillationLoss):
+            self.criterion.set_teacher_outputs(teacher_outputs)
         
-        # Call parent's train_batch with modified targets
-        return super().train_batch(batch_idx, (images, targets_with_teacher), **kwargs)
+        # Call parent's train_batch with original targets
+        return super().train_batch(batch_idx, (images, targets), **kwargs)
 
 def download_model_weights(model_name, target_path):
     """Download model weights from alternative sources if primary fails"""
