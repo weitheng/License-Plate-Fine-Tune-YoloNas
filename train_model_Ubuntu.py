@@ -142,30 +142,76 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
         print(f"Error converting COCO to YOLO format: {e}")
         raise
 
+def check_coco_dataset(coco_dir: str) -> bool:
+    """
+    Check if COCO dataset is already downloaded and processed
+    Returns True if dataset exists and is complete
+    """
+    required_files = {
+        'train': {
+            'images': os.path.join(coco_dir, 'images/train'),
+            'labels': os.path.join(coco_dir, 'labels/train'),
+            'annotations': os.path.join(coco_dir, 'annotations/instances_train2017.json')
+        },
+        'val': {
+            'images': os.path.join(coco_dir, 'images/val'),
+            'labels': os.path.join(coco_dir, 'labels/val'),
+            'annotations': os.path.join(coco_dir, 'annotations/instances_val2017.json')
+        }
+    }
+    
+    # Check if all required directories and files exist
+    for split_data in required_files.values():
+        for path in split_data.values():
+            if not os.path.exists(path):
+                return False
+            # Check if directories have content
+            if os.path.isdir(path) and not os.listdir(path):
+                return False
+    return True
+
 def prepare_combined_dataset() -> None:
     """Prepare combined COCO and license plate dataset"""
     # Create combined dataset directories
     combined_dir = './data/combined'
+    coco_dir = './data/coco'
+    
     for split in ['train', 'val']:
         os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
         os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
 
-    # Download and prepare COCO data
-    if download_coco_subset('./data'):
-        convert_coco_to_yolo('./data/coco', combined_dir)
+    # Check if COCO dataset already exists
+    if not check_coco_dataset(coco_dir):
+        logger.info("COCO dataset not found or incomplete. Downloading...")
+        if download_coco_subset('./data'):
+            convert_coco_to_yolo(coco_dir, combined_dir)
+        else:
+            raise RuntimeError("Failed to download COCO dataset")
     else:
-        raise RuntimeError("Failed to download COCO dataset")
+        logger.info("COCO dataset found. Skipping download.")
+        # Just convert existing COCO data to YOLO format
+        convert_coco_to_yolo(coco_dir, combined_dir)
+
+    # Check if combined dataset already exists
+    if os.path.exists(combined_dir):
+        logger.info("Checking existing combined dataset...")
+        try:
+            validate_dataset_contents(combined_dir)
+            logger.info("Existing combined dataset is valid.")
+            return
+        except Exception as e:
+            logger.warning(f"Existing combined dataset is invalid: {e}")
+            logger.info("Will recreate combined dataset...")
     
     # Copy license plate data with prefix to avoid conflicts
+    logger.info("Copying license plate data to combined dataset...")
     for split in ['train', 'val']:
         images_dir = f'images/{split}'
         labels_dir = f'labels/{split}'
         if os.path.exists(images_dir) and os.path.exists(labels_dir):
-            # Get list of label files
             label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
             
             for label_file in label_files:
-                # Get corresponding image file
                 img_base = label_file.replace('.txt', '')
                 img_extensions = ['.jpg', '.jpeg', '.png']
                 img_file = None
@@ -175,7 +221,6 @@ def prepare_combined_dataset() -> None:
                         break
                 
                 if img_file:
-                    # Copy both image and label with prefix
                     os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
                     os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
 
@@ -216,9 +261,13 @@ def validate_dataset_contents(data_dir: str) -> None:
 def cleanup_downloads():
     """Clean up downloaded files after processing"""
     try:
+        # Only remove zip files, keep processed data
         for file in os.listdir('./data'):
             if file.startswith('coco_') and file.endswith('.zip'):
-                os.remove(os.path.join('./data', file))
+                zip_path = os.path.join('./data', file)
+                if os.path.exists(zip_path):
+                    logger.info(f"Removing downloaded zip: {file}")
+                    os.remove(zip_path)
     except Exception as e:
         logger.warning(f"Error cleaning up downloads: {e}")
 
