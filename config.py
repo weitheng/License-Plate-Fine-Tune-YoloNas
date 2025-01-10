@@ -23,6 +23,20 @@ class TrainingConfig:
     # Export parameters
     export_image_size: tuple = (320, 320)
     
+    def validate(self):
+        """Validate configuration parameters"""
+        if self.batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if self.num_epochs < 1:
+            raise ValueError("num_epochs must be positive")
+        if not (0 <= self.confidence_threshold <= 1):
+            raise ValueError("confidence_threshold must be between 0 and 1")
+        if not (0 <= self.nms_threshold <= 1):
+            raise ValueError("nms_threshold must be between 0 and 1")
+        if self.max_predictions < 1:
+            raise ValueError("max_predictions must be positive")
+        return self
+    
     @classmethod
     def from_gpu_memory(cls, gpu_memory_gb: float) -> "TrainingConfig":
         config = cls()
@@ -30,4 +44,4 @@ class TrainingConfig:
             config.batch_size = 4
         elif gpu_memory_gb < 16:
             config.batch_size = 8
-        return config
+        return config.validate()
