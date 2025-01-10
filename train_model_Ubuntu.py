@@ -20,9 +20,16 @@ class KnowledgeDistillationLoss(torch.nn.Module):
         self.temperature = temperature
         self.alpha = alpha
         
-    def forward(self, student_outputs, targets, teacher_outputs):
+    def forward(self, student_outputs, targets):
+        # Get teacher outputs from targets dict
+        teacher_outputs = targets.pop('teacher_outputs', None)
+        
         # Standard student loss
         student_loss = self.student_loss_fn(student_outputs, targets)
+        
+        # If no teacher outputs, return only student loss
+        if teacher_outputs is None:
+            return student_loss
         
         # Distillation loss
         distillation_loss = torch.nn.functional.kl_div(
@@ -48,11 +55,12 @@ class DistillationTrainer(Trainer):
         with torch.no_grad():
             teacher_outputs = self.teacher_model(images)
         
-        # Add teacher outputs to targets
-        targets['teacher_outputs'] = teacher_outputs
+        # Create a copy of targets to avoid modifying the original
+        targets_with_teacher = targets.copy()
+        targets_with_teacher['teacher_outputs'] = teacher_outputs
         
-        # Call parent's train_batch
-        return super().train_batch(batch_idx, (images, targets), **kwargs)
+        # Call parent's train_batch with modified targets
+        return super().train_batch(batch_idx, (images, targets_with_teacher), **kwargs)
 
 def download_model_weights(model_name, target_path):
     """Download model weights from alternative sources if primary fails"""
