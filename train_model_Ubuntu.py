@@ -299,9 +299,36 @@ def diagnose_coco_dataset(coco_dir):
     
     logger.info("=== Diagnosis Complete ===")
     
-def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
+def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> None:
     """Convert COCO annotations to YOLO format and copy corresponding images"""
     try:
+        # First check if conversion has already been done
+        def check_conversion_exists():
+            for split in ['train', 'val']:
+                images_dir = os.path.join(target_dir, 'images', split)
+                labels_dir = os.path.join(target_dir, 'labels', split)
+                
+                # Check if directories exist and have content
+                if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
+                    return False
+                if not os.listdir(images_dir) or not os.listdir(labels_dir):
+                    return False
+                
+                # Check if number of images matches number of labels
+                image_files = set(f.split('.')[0] for f in os.listdir(images_dir) 
+                                if f.endswith(('.jpg', '.jpeg', '.png')))
+                label_files = set(f.split('.')[0] for f in os.listdir(labels_dir) 
+                                if f.endswith('.txt'))
+                if not image_files or not label_files:
+                    return False
+                if image_files != label_files:
+                    return False
+            return True
+
+        if check_conversion_exists():
+            logger.info("YOLO format conversion already exists, skipping conversion")
+            return
+
         monitor_memory()  # Monitor before conversion
         splits = ['train2017', 'val2017']
         
@@ -371,6 +398,7 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
 
             logger.success(f"✓ Processed {split} split: {len(img_ids)} images")
         monitor_memory()  # Monitor after conversion
+        
     except Exception as e:
         logger.error(f"Error converting COCO to YOLO format: {e}")
         raise
