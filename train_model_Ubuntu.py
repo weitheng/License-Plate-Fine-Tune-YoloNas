@@ -528,10 +528,11 @@ def prepare_combined_dataset() -> None:
     try:
         logger.info("=== Starting Dataset Preparation ===")
         
-        # Create combined dataset directories
+        # Create combined dataset directories with absolute paths
         logger.info("Step 1/4: Creating directory structure...")
-        combined_dir = './data/combined'
-        coco_dir = './data/coco'
+        current_dir = os.path.abspath(os.path.dirname(__file__))
+        combined_dir = os.path.abspath(os.path.join(current_dir, 'data', 'combined'))
+        coco_dir = os.path.abspath(os.path.join(current_dir, 'data', 'coco'))
         
         for split in ['train', 'val']:
             os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
@@ -555,48 +556,73 @@ def prepare_combined_dataset() -> None:
             if not validate_coco_structure(coco_dir, num_images=70000):
                 diagnose_coco_dataset(coco_dir)
                 raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
-                
+
+        # Convert COCO to YOLO format
         logger.info("Converting COCO to YOLO format...")
         convert_coco_to_yolo(coco_dir, combined_dir)
         logger.success("✓ COCO dataset processed")
 
         # Check if combined dataset already exists
         logger.info("Step 3/4: Checking existing combined dataset...")
+        dataset_exists = False
         if os.path.exists(combined_dir):
             try:
                 validate_dataset_contents(combined_dir)
                 logger.info("✓ Existing combined dataset is valid")
-                return
+                dataset_exists = True
             except Exception as e:
                 logger.warning(f"   - Existing dataset invalid: {e}")
                 logger.info("   - Will recreate combined dataset")
-        
-        # Copy license plate data with prefix to avoid conflicts
+
+        # Always process license plate data to verify
         logger.info("Step 4/4: Processing license plate data...")
         total_copied = 0
         for split in ['train', 'val']:
-            images_dir = f'images/{split}'
-            labels_dir = f'labels/{split}'
+            images_dir = os.path.join(current_dir, f'images/{split}')  # Use absolute path
+            labels_dir = os.path.join(current_dir, f'labels/{split}')  # Use absolute path
             if os.path.exists(images_dir) and os.path.exists(labels_dir):
                 label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
                 
-                with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
+                if not dataset_exists:  # Only copy if dataset doesn't exist
+                    with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
+                        for label_file in label_files:
+                            img_base = label_file.replace('.txt', '')
+                            img_extensions = ['.jpg', '.jpeg', '.png']
+                            img_file = None
+                            
+                            # Find matching image file
+                            for ext in img_extensions:
+                                if os.path.exists(os.path.join(images_dir, img_base + ext)):
+                                    img_file = img_base + ext
+                                    break
+                            
+                            # Only copy if we found a matching image
+                            if img_file:
+                                try:
+                                    # Copy image and label files
+                                    os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
+                                    os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
+                                    total_copied += 1
+                                except Exception as e:
+                                    logger.error(f"Failed to copy files for {img_base}: {e}")
+                            else:
+                                logger.warning(f"No matching image found for label: {label_file}")
+                            
+                            pbar.update(1)
+                else:
+                    # Just verify license plate files exist in combined dataset
                     for label_file in label_files:
                         img_base = label_file.replace('.txt', '')
-                        img_extensions = ['.jpg', '.jpeg', '.png']
-                        img_file = None
-                        for ext in img_extensions:
-                            if os.path.exists(os.path.join(images_dir, img_base + ext)):
-                                img_file = img_base + ext
+                        found = False
+                        for ext in ['.jpg', '.jpeg', '.png']:
+                            if os.path.exists(os.path.join(combined_dir, f"images/{split}/lp_{img_base}{ext}")):
+                                found = True
+                                total_copied += 1
                                 break
-                        
-                        if img_file:
-                            os.system(f'cp "{os.path.join(images_dir, img_file)}" "{os.path.join(combined_dir, f"images/{split}/lp_{img_file}")}"')
-                            os.system(f'cp "{os.path.join(labels_dir, label_file)}" "{os.path.join(combined_dir, f"labels/{split}/lp_{label_file}")}"')
-                            total_copied += 1
-                        pbar.update(1)
-        
-        logger.info(f"✓ License plate data processed ({total_copied} pairs copied)")
+                        if not found:
+                            logger.warning(f"Missing license plate image for {img_base}")
+
+        logger.info(f"✓ License plate data processed ({total_copied} pairs {'verified' if dataset_exists else 'copied'})")
         logger.info("=== Dataset Preparation Complete ===\n")
         
         # Memory cleanup
@@ -843,6 +869,72 @@ def log_environment_info():
     logger.info(f"SuperGradients version: {super_gradients.__version__}")
     logger.info("===========================")
 
+def validate_final_dataset(combined_dir: str) -> Dict[str, Dict[str, int]]:
+    """
+    Validate the final combined dataset structure and count files.
+    Returns statistics about the dataset.
+    """
+    logger.info("Validating final dataset structure...")
+    
+    stats = {
+        'train': {'coco': 0, 'license_plate': 0, 'total': 0},
+        'val': {'coco': 0, 'license_plate': 0, 'total': 0}
+    }
+    
+    for split in ['train', 'val']:
+        images_dir = os.path.join(combined_dir, 'images', split)
+        labels_dir = os.path.join(combined_dir, 'labels', split)
+        
+        if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
+            raise RuntimeError(f"Missing directory: {images_dir} or {labels_dir}")
+            
+        # Count COCO and license plate files separately
+        image_files = os.listdir(images_dir)
+        label_files = os.listdir(labels_dir)
+        
+        # Count license plate files (prefixed with 'lp_')
+        lp_images = len([f for f in image_files if f.startswith('lp_')])
+        lp_labels = len([f for f in label_files if f.startswith('lp_')])
+        
+        if lp_images != lp_labels:
+            raise RuntimeError(f"Mismatch in license plate files for {split}: {lp_images} images vs {lp_labels} labels")
+            
+        # Count COCO files (not prefixed with 'lp_')
+        coco_images = len([f for f in image_files if not f.startswith('lp_')])
+        coco_labels = len([f for f in label_files if not f.startswith('lp_')])
+        
+        if coco_images != coco_labels:
+            raise RuntimeError(f"Mismatch in COCO files for {split}: {coco_images} images vs {coco_labels} labels")
+            
+        # Verify all images have corresponding labels
+        image_bases = {os.path.splitext(f)[0] for f in image_files}
+        label_bases = {os.path.splitext(f)[0] for f in label_files}
+        
+        missing_labels = image_bases - label_bases
+        missing_images = label_bases - image_bases
+        
+        if missing_labels:
+            raise RuntimeError(f"Images without labels in {split}: {missing_labels}")
+        if missing_images:
+            raise RuntimeError(f"Labels without images in {split}: {missing_images}")
+            
+        # Update statistics
+        stats[split]['coco'] = coco_images
+        stats[split]['license_plate'] = lp_images
+        stats[split]['total'] = coco_images + lp_images
+        
+        # Verify expected counts
+        if split == 'train' and coco_images != 70000:
+            logger.warning(f"Unexpected number of COCO training images: {coco_images} (expected 70000)")
+        
+        logger.info(f"{split} split statistics:")
+        logger.info(f"  - COCO: {coco_images} images")
+        logger.info(f"  - License Plate: {lp_images} images")
+        logger.info(f"  - Total: {coco_images + lp_images} images")
+    
+    logger.success("✓ Dataset validation complete")
+    return stats
+
 def main():
     try:
         validate_cuda_setup()
@@ -895,7 +987,29 @@ def main():
         logger.info("✓ Dataset validation complete")
         monitor_memory()  # After validation
         
-        # Initialize wandb
+        # Validate final dataset before starting training
+        logger.info("Performing final dataset validation...")
+        dataset_stats = validate_final_dataset(combined_dir)
+        
+        # Log detailed dataset statistics
+        logger.info("\n=== Final Dataset Statistics ===")
+        logger.info("Training Set:")
+        logger.info(f"  - COCO Images: {dataset_stats['train']['coco']}")
+        logger.info(f"  - License Plate Images: {dataset_stats['train']['license_plate']}")
+        logger.info(f"  - Total Training Images: {dataset_stats['train']['total']}")
+        logger.info("\nValidation Set:")
+        logger.info(f"  - COCO Images: {dataset_stats['val']['coco']}")
+        logger.info(f"  - License Plate Images: {dataset_stats['val']['license_plate']}")
+        logger.info(f"  - Total Validation Images: {dataset_stats['val']['total']}")
+        logger.info("==============================\n")
+
+        # Only proceed with training if validation passes
+        if (dataset_stats['train']['coco'] != 70000 or 
+            dataset_stats['train']['license_plate'] == 0 or 
+            dataset_stats['val']['license_plate'] == 0):
+            raise RuntimeError("Dataset validation failed: Incorrect number of images")
+
+        # Initialize wandb and start training
         try:
             logger.info("Initializing Weights & Biases...")
             wandb.login()
