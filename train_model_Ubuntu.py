@@ -725,7 +725,7 @@ def main():
         logger.info("✓ Model weights ready")
 
         # Fix download URLs for YOLO-NAS models
-        print("Fixing model download URLs...")
+        logger.info("Fixing model download URLs...")
         os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
         os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
         os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
@@ -917,10 +917,10 @@ def main():
             logger.error(f"Failed to export model: {e}")
             raise
 
-        print(f"\nTraining completed!")
-        print(f"Checkpoint saved to: {final_checkpoint_path}")
-        print(f"Label map saved to: {label_map_path}")
-        print(f"ONNX model exported to: {onnx_path}")
+        logger.success("Training completed!")
+        logger.info(f"Checkpoint saved to: {final_checkpoint_path}")
+        logger.info(f"Label map saved to: {label_map_path}")
+        logger.info(f"ONNX model exported to: {onnx_path}")
 
         # Finish wandb session
         wandb.finish()
