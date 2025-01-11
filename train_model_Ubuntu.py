@@ -303,6 +303,16 @@ def diagnose_coco_dataset(coco_dir):
 def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> None:
     """Convert COCO annotations to YOLO format and copy corresponding images"""
     try:
+        # Add validation of input paths
+        if not os.path.isabs(coco_dir):
+            coco_dir = os.path.abspath(coco_dir)
+        if not os.path.isabs(target_dir):
+            target_dir = os.path.abspath(target_dir)
+            
+        # Add check for source directory
+        if not os.path.exists(coco_dir):
+            raise FileNotFoundError(f"COCO directory not found: {coco_dir}")
+            
         # First check if conversion has already been done
         def check_conversion_exists():
             for split in ['train', 'val']:
@@ -386,25 +396,40 @@ def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> No
                 with open(label_path, 'w') as f:
                     f.write('\n'.join(yolo_anns))
                 
-                # Try multiple possible image locations
+                # Try multiple possible paths for source image
                 possible_paths = [
+                    os.path.join(coco_dir, 'images', split, img_info['file_name']),  # Standard COCO structure: images/train2017/
                     os.path.join(coco_dir, split, img_info['file_name']),  # Direct in split directory
-                    os.path.join(coco_dir, 'images', split, img_info['file_name']),  # In images/split directory
-                    os.path.join(coco_dir, 'train2017' if split == 'train2017' else 'val2017', img_info['file_name'])  # In root
+                    os.path.join(coco_dir, 'train2017' if split == 'train2017' else 'val2017', img_info['file_name']),  # In root
+                    os.path.join(coco_dir, img_info['file_name']),  # Directly in coco_dir
+                    os.path.join(coco_dir, 'images', 'train2017' if split == 'train2017' else 'val2017', img_info['file_name'])  # Alternative COCO structure
                 ]
-                
+
+                # Find and copy the image
                 image_found = False
                 for src_img_path in possible_paths:
                     if os.path.exists(src_img_path):
                         dst_img_path = os.path.join(target_dir, 'images', out_dir, img_info['file_name'])
-                        os.system(f'cp "{src_img_path}" "{dst_img_path}"')
-                        image_found = True
-                        break
-                
-                if not image_found:
-                    logger.error(f"Image not found in any expected location: {img_info['file_name']}")
-                    logger.error(f"Tried paths: {possible_paths}")
+                        try:
+                            # Use shutil.copy2 to preserve metadata
+                            import shutil
+                            shutil.copy2(src_img_path, dst_img_path)
+                            # Verify the copied file
+                            if not os.path.exists(dst_img_path) or os.path.getsize(dst_img_path) == 0:
+                                raise IOError("File copy verification failed")
+                            image_found = True
+                            break
+                        except Exception as e:
+                            logger.error(f"Failed to copy image {src_img_path}: {e}")
+                            continue
 
+                if not image_found:
+                    logger.error(f"Image not found: {img_info['file_name']}")
+                    logger.error(f"Tried paths: {possible_paths}")
+                    # Skip this image and continue with the next one
+                    continue
+
+            total_images[out_dir] = len(img_ids)
             logger.success(f"✓ Processed {split} split: {len(img_ids)} images")
             total_images[out_dir] = len(img_ids)
         
@@ -424,6 +449,43 @@ def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> No
         
         monitor_memory()  # Monitor after conversion
         
+        # Verify the conversion
+        for split in ['train', 'val']:
+            images_dir = os.path.join(target_dir, 'images', split)
+            labels_dir = os.path.join(target_dir, 'labels', split)
+            
+            if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
+                raise RuntimeError(f"Missing directory after conversion: {images_dir} or {labels_dir}")
+                
+            num_images = len([f for f in os.listdir(images_dir) if f.endswith(('.jpg', '.jpeg', '.png'))])
+            num_labels = len([f for f in os.listdir(labels_dir) if f.endswith('.txt')])
+            
+            logger.info(f"{split} split: {num_images} images, {num_labels} labels")
+            if num_images == 0 or num_labels == 0:
+                raise RuntimeError(f"No files found in {split} split after conversion")
+
+        # Add final verification of total files
+        final_verification = {
+            'train': {'images': 0, 'labels': 0},
+            'val': {'images': 0, 'labels': 0}
+        }
+        
+        for split in ['train', 'val']:
+            images_dir = os.path.join(target_dir, 'images', split)
+            labels_dir = os.path.join(target_dir, 'labels', split)
+            
+            final_verification[split]['images'] = len([f for f in os.listdir(images_dir) 
+                                                         if f.endswith(('.jpg', '.jpeg', '.png'))])
+            final_verification[split]['labels'] = len([f for f in os.listdir(labels_dir) 
+                                                         if f.endswith('.txt')])
+            
+            if final_verification[split]['images'] != final_verification[split]['labels']:
+                logger.warning(f"Mismatch in {split} split: {final_verification[split]['images']} images "
+                             f"vs {final_verification[split]['labels']} labels")
+
+        logger.success("✓ Dataset conversion completed successfully")
+        return final_verification
+
     except Exception as e:
         logger.error(f"Error converting COCO to YOLO format: {e}")
         raise
