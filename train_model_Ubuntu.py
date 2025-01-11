@@ -577,10 +577,26 @@ def cleanup_downloads():
 
 class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
-        super().__init__()
+        # Initialize with 'train' phase since this is a training callback
+        super().__init__(phase='train')
         self.best_map: float = 0
         self.best_epoch: int = 0
         self.start_time: Optional[float] = None
+        
+    def on_validation_start(self, context: Any) -> None:
+        pass
+        
+    def on_validation_end(self, context: Any) -> None:
+        pass
+        
+    def on_epoch_start(self, context: Any) -> None:
+        pass
+        
+    def on_batch_start(self, context: Any) -> None:
+        pass
+        
+    def on_batch_end(self, context: Any) -> None:
+        pass
         
     def on_training_start(self, context: Any) -> None:
         """Called when training starts"""
@@ -714,10 +730,32 @@ def verify_dataset_structure(data_dir: str) -> None:
 def validate_training_config(train_params: dict) -> None:
     """Validate training configuration parameters"""
     required_keys = ['resume', 'resume_strict_load', 'load_opt_params', 
-                    'load_ema_as_net', 'resume_epoch']
+                    'load_ema_as_net', 'resume_epoch', 'loss', 'metric_to_watch',
+                    'valid_metrics_list', 'max_epochs', 'initial_lr']
     for key in required_keys:
         if key not in train_params:
             raise ValueError(f"Missing required training parameter: {key}")
+            
+    # Validate numeric parameters
+    if train_params['initial_lr'] <= 0:
+        raise ValueError("Learning rate must be positive")
+    if train_params['max_epochs'] <= 0:
+        raise ValueError("Number of epochs must be positive")
+
+def log_environment_info():
+    """Log environment and library versions"""
+    import sys
+    import super_gradients
+    
+    logger.info("=== Environment Information ===")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        logger.info(f"CUDA version: {torch.version.cuda}")
+        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+    logger.info(f"SuperGradients version: {super_gradients.__version__}")
+    logger.info("===========================")
 
 def main():
     try:
@@ -818,9 +856,11 @@ def main():
 
         # Initialize model with COCO weights
         try:
+            logger.info("Initializing model...")
             model = models.get(Models.YOLO_NAS_S, 
                              num_classes=81,
                              pretrained_weights="coco")
+            logger.success("✓ Model initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize model: {e}")
             raise RuntimeError("Model initialization failed") from e
@@ -1044,6 +1084,9 @@ def main():
         # Close wandb run if it exists
         if wandb.run is not None:
             wandb.finish()
+
+# Call at start of main()
+log_environment_info()
 
 if __name__ == "__main__":
     main()
