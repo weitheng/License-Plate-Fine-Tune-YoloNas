@@ -109,9 +109,9 @@ def download_coco_subset(target_dir, num_images=70000):
     """Download a subset of COCO dataset"""
     try:
         # Create directories for COCO structure
-        os.makedirs(os.path.join(target_dir, 'coco/train2017'), exist_ok=True)
-        os.makedirs(os.path.join(target_dir, 'coco/val2017'), exist_ok=True)
-        os.makedirs(os.path.join(target_dir, 'coco/annotations'), exist_ok=True)
+        os.makedirs(os.path.join(target_dir, 'coco', 'images', 'train2017'), exist_ok=True)
+        os.makedirs(os.path.join(target_dir, 'coco', 'images', 'val2017'), exist_ok=True)
+        os.makedirs(os.path.join(target_dir, 'coco', 'annotations'), exist_ok=True)
 
         # URLs for both images and annotations
         urls = {
@@ -136,13 +136,36 @@ def download_coco_subset(target_dir, num_images=70000):
                     
                     logger.info(f"Extracting {name}...")
                     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                        zip_ref.extractall(os.path.join(target_dir, 'coco'))
+                        if name == 'annotations':
+                            # Extract annotations directly to annotations directory
+                            zip_ref.extractall(os.path.join(target_dir, 'coco'))
+                        else:
+                            # For images, we need to ensure they go into the images directory
+                            for zip_info in zip_ref.filelist:
+                                if zip_info.filename.endswith('.jpg'):
+                                    # Extract to the correct images subdirectory
+                                    zip_info.filename = os.path.join('images', zip_info.filename)
+                                    zip_ref.extract(zip_info, os.path.join(target_dir, 'coco'))
                         
                 except Exception as e:
                     logger.error(f"Error downloading {name}: {e}")
                     if os.path.exists(zip_path):
                         os.remove(zip_path)
                     return False
+                
+                # Verify extraction
+                if name == 'train_images':
+                    img_dir = os.path.join(target_dir, 'coco', 'images', 'train2017')
+                    if not os.path.exists(img_dir) or not os.listdir(img_dir):
+                        logger.error(f"Failed to extract training images to {img_dir}")
+                        return False
+                elif name == 'val_images':
+                    img_dir = os.path.join(target_dir, 'coco', 'images', 'val2017')
+                    if not os.path.exists(img_dir) or not os.listdir(img_dir):
+                        logger.error(f"Failed to extract validation images to {img_dir}")
+                        return False
+                
+        logger.success("✓ COCO dataset downloaded and extracted successfully")
         return True
     except Exception as e:
         logger.error(f"Error in COCO dataset download: {e}")
