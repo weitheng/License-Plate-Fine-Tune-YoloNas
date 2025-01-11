@@ -640,6 +640,34 @@ def verify_checksum(file_path: str, expected_hash: str) -> bool:
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest() == expected_hash
 
+def validate_path_is_absolute(path: str, description: str) -> None:
+    """Validate that a path is absolute and exists"""
+    if not os.path.isabs(path):
+        raise ValueError(f"{description} must be an absolute path. Got: {path}")
+    directory = os.path.dirname(path)
+    if not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+    if not os.access(directory, os.W_OK):
+        raise PermissionError(f"No write permission for {description} directory: {directory}")
+
+def verify_dataset_structure(data_dir: str) -> None:
+    """Verify complete dataset structure before training"""
+    required_dirs = ['images/train', 'images/val', 'labels/train', 'labels/val']
+    for dir_path in required_dirs:
+        full_path = os.path.join(data_dir, dir_path)
+        if not os.path.exists(full_path):
+            raise RuntimeError(f"Missing required directory: {full_path}")
+        if not os.listdir(full_path):
+            raise RuntimeError(f"Empty directory: {full_path}")
+
+def validate_training_config(train_params: dict) -> None:
+    """Validate training configuration parameters"""
+    required_keys = ['resume', 'resume_strict_load', 'load_opt_params', 
+                    'load_ema_as_net', 'resume_epoch']
+    for key in required_keys:
+        if key not in train_params:
+            raise ValueError(f"Missing required training parameter: {key}")
+
 def main():
     try:
         validate_cuda_setup()
@@ -651,18 +679,24 @@ def main():
 
         # Get absolute paths at the start
         current_dir = os.path.abspath(os.path.dirname(__file__))
-        data_dir = os.path.join(current_dir, 'data')
-        coco_dir = os.path.join(data_dir, 'coco')
-        combined_dir = os.path.join(data_dir, 'combined')
-        checkpoint_dir = os.path.join(current_dir, 'checkpoints')
-        export_dir = os.path.join(current_dir, 'export')
-
-        # Create all necessary directories
-        os.makedirs(data_dir, exist_ok=True)
-        os.makedirs(coco_dir, exist_ok=True)
-        os.makedirs(combined_dir, exist_ok=True)
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        os.makedirs(export_dir, exist_ok=True)
+        data_dir = os.path.abspath(os.path.join(current_dir, 'data'))
+        coco_dir = os.path.abspath(os.path.join(data_dir, 'coco'))
+        combined_dir = os.path.abspath(os.path.join(data_dir, 'combined'))
+        checkpoint_dir = os.path.abspath(os.path.join(current_dir, 'checkpoints'))
+        export_dir = os.path.abspath(os.path.join(current_dir, 'export'))
+        
+        # Validate critical paths early
+        validate_path_is_absolute(combined_dir, "Dataset directory")
+        validate_path_is_absolute(checkpoint_dir, "Checkpoint directory")
+        validate_path_is_absolute(export_dir, "Export directory")
+        onnx_path = os.path.join(os.path.abspath(export_dir), "yolo_nas_s_coco_license_plate.onnx")
+        validate_path_is_absolute(onnx_path, "ONNX export path")
+        
+        # Create all necessary directories with proper permissions
+        for directory in [data_dir, coco_dir, combined_dir, checkpoint_dir, export_dir]:
+            os.makedirs(directory, exist_ok=True)
+            if not os.access(directory, os.W_OK):
+                raise PermissionError(f"No write permission for directory: {directory}")
 
         logger.info(f"Using directories: checkpoint_dir={checkpoint_dir}, export_dir={export_dir}")
 
@@ -679,9 +713,9 @@ def main():
         prepare_combined_dataset()
         monitor_memory()  # After dataset prep
         
-        # Validate dataset structure
-        logger.info("Validating final dataset structure...")
-        validate_dataset(combined_dir)
+        # After prepare_combined_dataset()
+        logger.info("Verifying dataset structure...")
+        verify_dataset_structure(combined_dir)
         validate_dataset_contents(combined_dir)
         logger.info("✓ Dataset validation complete")
         monitor_memory()  # After validation
@@ -803,10 +837,9 @@ def main():
             }
 
         # Update dataloader params with absolute paths
-        data_dir = os.path.join(current_dir, 'data/combined')
         train_data = coco_detection_yolo_format_train(
             dataset_params={
-                'data_dir': data_dir,  # Using absolute path
+                'data_dir': combined_dir,  # Using absolute path to combined dataset
                 'images_dir': 'images/train',
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
@@ -839,24 +872,38 @@ def main():
         )
 
         # Check for existing checkpoint
-        checkpoint_path = os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth')
+        checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'latest_checkpoint.pth'))
+        
+        # Verify the checkpoint directory exists and is writable
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir, exist_ok=True)
+        if not os.access(checkpoint_dir, os.W_OK):
+            raise PermissionError(f"No write permission for checkpoint directory: {checkpoint_dir}")
+            
+        # Initialize training parameters with checkpoint handling
         if os.path.exists(checkpoint_path) and verify_checkpoint(checkpoint_path):
             logger.info(f"Found existing checkpoint: {checkpoint_path}")
             train_params.update({
                 'resume': True,
-                'resume_path': checkpoint_path,  # Using absolute path
+                'resume_path': checkpoint_path,
                 'resume_strict_load': False,
-                # Load optimizer and scheduler states
-                'load_opt_params': True,
-                'load_ema_as_net': False,
-                # Start from the last epoch
-                'resume_epoch': True
+                'load_opt_params': True,    # Load optimizer state
+                'load_ema_as_net': False,   # Don't load EMA weights as main weights
+                'resume_epoch': True        # Continue from the last epoch
             })
-            logger.info("Training will resume from last checkpoint")
+            logger.info(f"Will resume training from: {checkpoint_path}")
         else:
-            logger.info("Starting training from scratch")
+            logger.info("No valid checkpoint found, starting training from scratch")
+            train_params.update({
+                'resume': False,
+                'resume_path': None,
+                'resume_strict_load': False,
+                'load_opt_params': False,
+                'load_ema_as_net': False,
+                'resume_epoch': False
+            })
 
-        # Initialize trainer
+        # Initialize trainer with explicit absolute paths
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
             ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Ensure absolute path
@@ -867,14 +914,18 @@ def main():
         
         # Add callback to training params
         train_params['phase_callbacks'] = [progress_callback]
-        
+
         # Validate dataset contents before training
         validate_dataset_contents(combined_dir)
         
         # Add the validation call in main() before training
         validate_training_prerequisites(combined_dir, checkpoint_dir, export_dir, l_model_path, s_model_path)
         
-        # Before training
+        # Before trainer.train()
+        logger.info("Validating training configuration...")
+        validate_training_config(train_params)
+        logger.info("✓ Training configuration validated")
+        
         monitor_memory()
         trainer.train(
             model=model,
@@ -888,12 +939,17 @@ def main():
         # Cleanup downloaded files
         cleanup_downloads()
 
-        # Save final model checkpoint
-        final_checkpoint_path = os.path.join(os.path.abspath(checkpoint_dir), 'coco_license_plate_detection_final.pth')
-        trainer.save_checkpoint(model_state=model.state_dict(), optimizer_state=None, scheduler_state=None, checkpoint_path=final_checkpoint_path)
+        # Save final model checkpoint with absolute paths
+        final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth'))
+        trainer.save_checkpoint(
+            model_state=model.state_dict(),
+            optimizer_state=None,
+            scheduler_state=None,
+            checkpoint_path=final_checkpoint_path
+        )
 
-        # Generate complete label map file
-        label_map_path = os.path.join(os.path.abspath(checkpoint_dir), 'label_map.txt')
+        # Generate complete label map file with absolute path
+        label_map_path = os.path.abspath(os.path.join(checkpoint_dir, 'label_map.txt'))
         with open(label_map_path, 'w') as f:
             for idx, class_name in enumerate(dataset_config['names']):
                 f.write(f"{idx}: {class_name}\n")

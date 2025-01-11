@@ -4,6 +4,9 @@ import psutil
 import torch
 import yaml
 from typing import Tuple, Dict, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 def assess_hardware_capabilities() -> Dict[str, int]:
     """
@@ -44,7 +47,7 @@ def assess_hardware_capabilities() -> Dict[str, int]:
             'batch_size': recommended_batch_size
         }
     except Exception as e:
-        logger.error(f"Error assessing hardware capabilities: {e}")
+        logger.error(f"Error assessing hardware: {e}")
         # Return conservative defaults
         return {
             'num_workers': 1,
