@@ -333,6 +333,11 @@ def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> No
         monitor_memory()  # Monitor before conversion
         splits = ['train2017', 'val2017']
         
+        total_images = {
+            'train': 0,
+            'val': 0
+        }
+        
         for split in splits:
             anno_file = os.path.join(coco_dir, 'annotations', f'instances_{split}.json')
             if not os.path.exists(anno_file):
@@ -343,8 +348,11 @@ def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> No
             
             # Get image ids and categories
             img_ids = coco.getImgIds()
+            logger.info(f"Found {len(img_ids)} images in {split}")
+            
             if split == 'train2017':
-                img_ids = img_ids[:num_images]  # Limit only training images
+                logger.info(f"Limiting training images to {num_images}")
+                img_ids = img_ids[:num_images]
             
             # Get category mapping
             cat_ids = coco.getCatIds()
@@ -398,6 +406,22 @@ def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> No
                     logger.error(f"Tried paths: {possible_paths}")
 
             logger.success(f"✓ Processed {split} split: {len(img_ids)} images")
+            total_images[out_dir] = len(img_ids)
+        
+        logger.info("=== Dataset Statistics ===")
+        logger.info(f"COCO Training images: {total_images['train']}")
+        logger.info(f"COCO Validation images: {total_images['val']}")
+        
+        # Count license plate images
+        license_plate_train = len(os.listdir(os.path.join(target_dir, 'images/train')))
+        license_plate_val = len(os.listdir(os.path.join(target_dir, 'images/val')))
+        
+        logger.info(f"License Plate Training images: {license_plate_train}")
+        logger.info(f"License Plate Validation images: {license_plate_val}")
+        logger.info(f"Total Training images: {total_images['train'] + license_plate_train}")
+        logger.info(f"Total Validation images: {total_images['val'] + license_plate_val}")
+        logger.info("========================")
+        
         monitor_memory()  # Monitor after conversion
         
     except Exception as e:
