@@ -23,7 +23,7 @@ import time
 import coloredlogs
 import psutil
 import hashlib
-from super_gradients.training.utils.callbacks import PhaseCallback
+from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
@@ -578,7 +578,7 @@ def cleanup_downloads():
 class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
         # Initialize with 'train' phase since this is a training callback
-        super().__init__(phase='train')
+        super().__init__(phase=Phase.TRAIN_EPOCH_END)
         self.best_map: float = 0
         self.best_epoch: int = 0
         self.start_time: Optional[float] = None
