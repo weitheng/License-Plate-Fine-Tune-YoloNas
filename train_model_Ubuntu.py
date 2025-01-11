@@ -152,11 +152,22 @@ def validate_coco_structure(coco_dir):
     """Validate COCO dataset directory structure and contents"""
     logger.info("Validating COCO dataset structure...")
     
+    # First check if the directories exist in the root of coco_dir
+    train_dir = os.path.join(coco_dir, 'train2017')
+    val_dir = os.path.join(coco_dir, 'val2017')
+    anno_dir = os.path.join(coco_dir, 'annotations')
+    
+    # If not found in root, check in images subdirectory
+    if not os.path.exists(train_dir):
+        train_dir = os.path.join(coco_dir, 'images', 'train2017')
+    if not os.path.exists(val_dir):
+        val_dir = os.path.join(coco_dir, 'images', 'val2017')
+    
     # Check main directories
     required_dirs = [
-        os.path.join(coco_dir, 'images', 'train2017'),
-        os.path.join(coco_dir, 'images', 'val2017'),
-        os.path.join(coco_dir, 'annotations')
+        train_dir,
+        val_dir,
+        anno_dir
     ]
     
     for dir_path in required_dirs:
@@ -166,8 +177,8 @@ def validate_coco_structure(coco_dir):
             
     # Check annotation files
     anno_files = [
-        os.path.join(coco_dir, 'annotations', 'instances_train2017.json'),
-        os.path.join(coco_dir, 'annotations', 'instances_val2017.json')
+        os.path.join(anno_dir, 'instances_train2017.json'),
+        os.path.join(anno_dir, 'instances_val2017.json')
     ]
     
     for anno_file in anno_files:
@@ -176,14 +187,13 @@ def validate_coco_structure(coco_dir):
             return False
     
     # Check if image directories have content
-    for split in ['train2017', 'val2017']:
-        img_dir = os.path.join(coco_dir, 'images', split)
+    for split, img_dir in [('train2017', train_dir), ('val2017', val_dir)]:
         if not os.listdir(img_dir):
             logger.error(f"Image directory is empty: {img_dir}")
             return False
             
         # Sample check of a few images
-        coco = COCO(os.path.join(coco_dir, 'annotations', f'instances_{split}.json'))
+        coco = COCO(os.path.join(anno_dir, f'instances_{split}.json'))
         img_ids = coco.getImgIds()[:5]  # Check first 5 images
         
         for img_id in img_ids:
@@ -282,7 +292,7 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
             if split == 'train2017':
                 img_ids = img_ids[:num_images]  # Limit only training images
             
-            # Create category mapping
+            # Get category mapping
             cat_ids = coco.getCatIds()
             cat_map = {old_id: new_id for new_id, old_id in enumerate(cat_ids)}
             
@@ -301,7 +311,7 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
                 # Create YOLO format annotations
                 yolo_anns = []
                 for ann in anns:
-                    cat_id = cat_map[ann['category_id']]  # Map to new category ID
+                    cat_id = cat_map[ann['category_id']]
                     bbox = ann['bbox']
                     x_center = (bbox[0] + bbox[2]/2) / img_info['width']
                     y_center = (bbox[1] + bbox[3]/2) / img_info['height']
@@ -314,22 +324,24 @@ def convert_coco_to_yolo(coco_dir, target_dir, num_images=70000):
                 with open(label_path, 'w') as f:
                     f.write('\n'.join(yolo_anns))
                 
-                # Copy corresponding image - Fix the path structure
-                src_img_path = os.path.join(coco_dir, split, img_info['file_name'])  # Changed this line
-                dst_img_path = os.path.join(target_dir, 'images', out_dir, img_info['file_name'])
+                # Try multiple possible image locations
+                possible_paths = [
+                    os.path.join(coco_dir, split, img_info['file_name']),  # Direct in split directory
+                    os.path.join(coco_dir, 'images', split, img_info['file_name']),  # In images/split directory
+                    os.path.join(coco_dir, 'train2017' if split == 'train2017' else 'val2017', img_info['file_name'])  # In root
+                ]
                 
-                if os.path.exists(src_img_path):
-                    os.system(f'cp "{src_img_path}" "{dst_img_path}"')
-                else:
-                    logger.warning(f"Image not found: {src_img_path}")
-                    logger.warning(f"Image info: {img_info}")
-                    # Try alternative path
-                    alt_src_img_path = os.path.join(coco_dir, 'images', split, img_info['file_name'])
-                    if os.path.exists(alt_src_img_path):
-                        os.system(f'cp "{alt_src_img_path}" "{dst_img_path}"')
-                        logger.info(f"Found image at alternative path: {alt_src_img_path}")
-                    else:
-                        logger.error(f"Image not found at alternative path: {alt_src_img_path}")
+                image_found = False
+                for src_img_path in possible_paths:
+                    if os.path.exists(src_img_path):
+                        dst_img_path = os.path.join(target_dir, 'images', out_dir, img_info['file_name'])
+                        os.system(f'cp "{src_img_path}" "{dst_img_path}"')
+                        image_found = True
+                        break
+                
+                if not image_found:
+                    logger.error(f"Image not found in any expected location: {img_info['file_name']}")
+                    logger.error(f"Tried paths: {possible_paths}")
 
             logger.success(f"✓ Processed {split} split: {len(img_ids)} images")
         monitor_memory()  # Monitor after conversion
