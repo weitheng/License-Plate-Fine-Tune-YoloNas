@@ -382,13 +382,11 @@ def check_coco_dataset(coco_dir: str) -> bool:
     """
     required_files = {
         'train': {
-            'images': os.path.join(coco_dir, 'images/train'),
-            'labels': os.path.join(coco_dir, 'labels/train'),
+            'images': os.path.join(coco_dir, 'images/train2017'),
             'annotations': os.path.join(coco_dir, 'annotations/instances_train2017.json')
         },
         'val': {
-            'images': os.path.join(coco_dir, 'images/val'),
-            'labels': os.path.join(coco_dir, 'labels/val'),
+            'images': os.path.join(coco_dir, 'images/val2017'),
             'annotations': os.path.join(coco_dir, 'annotations/instances_val2017.json')
         }
     }
@@ -398,9 +396,17 @@ def check_coco_dataset(coco_dir: str) -> bool:
         for path in split_data.values():
             if not os.path.exists(path):
                 return False
-            # Check if directories have content
-            if os.path.isdir(path) and not os.listdir(path):
+            # For image directories, check if they have content
+            if 'images' in path and not os.listdir(path):
                 return False
+            # For annotation files, check if they're valid JSON
+            if path.endswith('.json'):
+                try:
+                    with open(path, 'r') as f:
+                        import json
+                        json.load(f)
+                except Exception:
+                    return False
     return True
 
 def prepare_combined_dataset() -> None:
@@ -417,24 +423,27 @@ def prepare_combined_dataset() -> None:
             os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
         logger.success("✓ Directory structure created")
 
-        # Check if COCO dataset already exists
+        # Check if COCO dataset already exists and is valid
         logger.info("Step 2/4: Processing COCO dataset...")
-        if not check_coco_dataset(coco_dir):
-            logger.warning("COCO dataset check failed, running diagnostics...")
-            diagnose_coco_dataset(coco_dir)  # Add diagnostic info before failing
-            logger.info("   - COCO dataset not found, downloading...")
-            if download_coco_subset('./data'):
-                if not validate_coco_structure(coco_dir, num_images=70000):
-                    diagnose_coco_dataset(coco_dir)
-                    raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
-                logger.info("   - Converting COCO to YOLO format...")
-                convert_coco_to_yolo(coco_dir, combined_dir)
-            else:
-                raise RuntimeError("Failed to download COCO dataset")
+        if check_coco_dataset(coco_dir):
+            logger.info("✓ Valid COCO dataset found, skipping download")
         else:
-            logger.info("   - COCO dataset found, converting to YOLO format...")
-            convert_coco_to_yolo(coco_dir, combined_dir)
-        logger.info("✓ COCO dataset processed")
+            # Only run diagnostics if the dataset exists but is invalid
+            if os.path.exists(coco_dir) and os.listdir(coco_dir):
+                logger.warning("COCO dataset exists but may be incomplete, running diagnostics...")
+                diagnose_coco_dataset(coco_dir)
+                
+            logger.info("Downloading COCO dataset...")
+            if not download_coco_subset('./data'):
+                raise RuntimeError("Failed to download COCO dataset")
+                
+            if not validate_coco_structure(coco_dir, num_images=70000):
+                diagnose_coco_dataset(coco_dir)
+                raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
+                
+        logger.info("Converting COCO to YOLO format...")
+        convert_coco_to_yolo(coco_dir, combined_dir)
+        logger.success("✓ COCO dataset processed")
 
         # Check if combined dataset already exists
         logger.info("Step 3/4: Checking existing combined dataset...")
