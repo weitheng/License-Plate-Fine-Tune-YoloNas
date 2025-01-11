@@ -23,6 +23,7 @@ import time
 import coloredlogs
 import psutil
 import hashlib
+from super_gradients.training.utils.callbacks import PhaseCallback
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
@@ -574,16 +575,23 @@ def cleanup_downloads():
     except Exception as e:
         logger.warning(f"Error cleaning up downloads: {e}")
 
-class TrainingProgressCallback:
+class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
+        super().__init__()
         self.best_map: float = 0
         self.best_epoch: int = 0
         self.start_time: Optional[float] = None
         
-    def __call__(self, epoch: int, metrics: Dict[str, float], context: Any) -> None:
-        if self.start_time is None:
-            self.start_time = time.time()
-            
+    def on_training_start(self, context: Any) -> None:
+        """Called when training starts"""
+        self.start_time = time.time()
+        logger.info("Training started")
+        
+    def on_epoch_end(self, context: Any) -> None:
+        """Called at the end of each epoch"""
+        epoch = context.epoch
+        metrics = context.metrics_dict
+        
         current_map = metrics.get('mAP@0.50', 0)
         if current_map > self.best_map:
             self.best_map = current_map
@@ -593,6 +601,12 @@ class TrainingProgressCallback:
         # Log training progress
         elapsed_time = time.time() - self.start_time
         logger.info(f"Epoch {epoch}: mAP={current_map:.4f}, Best={self.best_map:.4f} (epoch {self.best_epoch}), Time={elapsed_time/3600:.1f}h")
+    
+    def on_training_end(self, context: Any) -> None:
+        """Called when training ends"""
+        elapsed_time = time.time() - self.start_time
+        logger.info(f"Training completed in {elapsed_time/3600:.1f}h")
+        logger.info(f"Best mAP: {self.best_map:.4f} at epoch {self.best_epoch}")
 
 def monitor_memory():
     """Monitor memory usage during training"""
