@@ -171,7 +171,7 @@ def download_coco_subset(target_dir, num_images=70000):
         logger.error(f"Error in COCO dataset download: {e}")
         return False
 
-def validate_coco_structure(coco_dir):
+def validate_coco_structure(coco_dir, num_images=70000):
     """Validate COCO dataset directory structure and contents"""
     logger.info("Validating COCO dataset structure...")
     
@@ -187,11 +187,7 @@ def validate_coco_structure(coco_dir):
         val_dir = os.path.join(coco_dir, 'images', 'val2017')
     
     # Check main directories
-    required_dirs = [
-        train_dir,
-        val_dir,
-        anno_dir
-    ]
+    required_dirs = [train_dir, val_dir, anno_dir]
     
     for dir_path in required_dirs:
         if not os.path.exists(dir_path):
@@ -217,9 +213,16 @@ def validate_coco_structure(coco_dir):
             
         # Sample check of a few images
         coco = COCO(os.path.join(anno_dir, f'instances_{split}.json'))
-        img_ids = coco.getImgIds()[:5]  # Check first 5 images
+        img_ids = coco.getImgIds()
         
-        for img_id in img_ids:
+        # Apply limit only to training set
+        if split == 'train2017':
+            img_ids = img_ids[:num_images]
+            logger.info(f"Validating first {num_images} training images")
+        
+        # Check first 5 images from the selected set
+        sample_ids = img_ids[:5]
+        for img_id in sample_ids:
             img_info = coco.loadImgs(img_id)[0]
             img_path = os.path.join(img_dir, img_info['file_name'])
             if not os.path.exists(img_path):
@@ -421,8 +424,8 @@ def prepare_combined_dataset() -> None:
             diagnose_coco_dataset(coco_dir)  # Add diagnostic info before failing
             logger.info("   - COCO dataset not found, downloading...")
             if download_coco_subset('./data'):
-                if not validate_coco_structure(coco_dir):
-                    diagnose_coco_dataset(coco_dir)  # Add diagnostic info after failed validation
+                if not validate_coco_structure(coco_dir, num_images=70000):
+                    diagnose_coco_dataset(coco_dir)
                     raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
                 logger.info("   - Converting COCO to YOLO format...")
                 convert_coco_to_yolo(coco_dir, combined_dir)
