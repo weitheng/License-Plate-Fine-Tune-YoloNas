@@ -805,108 +805,6 @@ def cleanup_downloads():
     except Exception as e:
         logger.warning(f"Error cleaning up downloads: {e}")
 
-class TrainingProgressCallback(PhaseCallback):
-    def __init__(self) -> None:
-        # Initialize with correct SuperGradients phase names
-        phases = [
-            Phase.TRAIN_BATCH_STEP,      # Changed from TRAIN_BATCH_END
-            Phase.TRAIN_EPOCH_END,
-            Phase.VALIDATION_BATCH_END,  # Changed from VALIDATION_BATCH_END
-            Phase.VALIDATION_EPOCH_END,
-            Phase.TRAIN_BATCH_STEP,      # Changed from TRAIN_BATCH_START
-            Phase.VALIDATION_BATCH_END,  # Changed from VALIDATION_BATCH_START
-            Phase.TRAIN_EPOCH_START,
-            Phase.VALIDATION_EPOCH_START
-        ]
-        super().__init__(phases)
-        self.best_map: float = 0
-        self.best_epoch: int = 0
-        self.start_time: Optional[float] = None
-        self.batch_count: int = 0
-        self.epoch_start_time: Optional[float] = None
-        
-    def __call__(self, context: Any) -> None:
-        """Override base __call__ to prevent NotImplementedError"""
-        phase = context.phase
-        if phase == Phase.TRAIN_EPOCH_START:
-            self.on_epoch_start(context)
-        elif phase == Phase.TRAIN_EPOCH_END:
-            self.on_epoch_end(context)
-        elif phase == Phase.VALIDATION_EPOCH_START:
-            self.on_validation_start(context)
-        elif phase == Phase.VALIDATION_EPOCH_END:
-            self.on_validation_end(context)
-        elif phase == Phase.TRAIN_BATCH_STEP:      # Changed from TRAIN_BATCH_START/END
-            self.on_batch_step(context)            # Combined batch start/end handling
-        elif phase == Phase.VALIDATION_BATCH_STEP:  # Changed from VALIDATION_BATCH_START/END
-            pass                                    # Handle if needed
-            
-    def on_batch_step(self, context: Any) -> None:
-        """Called for each batch step (combines start/end handling)"""
-        self.batch_count += 1
-
-    def on_validation_start(self, context: Any) -> None:
-        """Called when validation starts"""
-        pass
-        
-    def on_validation_end(self, context: Any) -> None:
-        """Called when validation ends"""
-        metrics = context.metrics_dict
-        current_map = metrics.get('mAP@0.50', 0)
-        if current_map > self.best_map:
-            self.best_map = current_map
-            self.best_epoch = context.epoch
-            logger.info(f"New best mAP: {self.best_map:.4f} at epoch {context.epoch}")
-        
-    def on_epoch_start(self, context: Any) -> None:
-        """Called when epoch starts"""
-        self.batch_count = 0
-        self.epoch_start_time = time.time()
-        
-    def on_batch_start(self, context: Any) -> None:
-        """Called when batch starts"""
-        pass
-        
-    def on_batch_end(self, context: Any) -> None:
-        """Called when batch ends"""
-        self.batch_count += 1
-        
-    def on_train_loader_start(self, context: Any) -> None:
-        """Called when train loader starts"""
-        pass
-
-    def on_train_loader_end(self, context: Any) -> None:
-        """Called when train loader ends"""
-        if self.epoch_start_time:
-            epoch_time = time.time() - self.epoch_start_time
-            logger.info(f"Epoch training time: {epoch_time:.2f}s")
-        
-    def on_training_start(self, context: Any) -> None:
-        """Called when training starts"""
-        self.start_time = time.time()
-        logger.info("Training started")
-        
-    def on_training_end(self, context: Any) -> None:
-        """Called when training ends"""
-        elapsed_time = time.time() - self.start_time if self.start_time else 0
-        logger.info(f"Training completed in {elapsed_time/3600:.1f}h")
-        logger.info(f"Best mAP: {self.best_map:.4f} at epoch {self.best_epoch}")
-
-    def on_epoch_end(self, context: Any) -> None:
-        """Called at the end of each epoch"""
-        epoch = context.epoch
-        metrics = context.metrics_dict
-        
-        current_map = metrics.get('mAP@0.50', 0)
-        if current_map > self.best_map:
-            self.best_map = current_map
-            self.best_epoch = epoch
-            logger.info(f"New best mAP: {self.best_map:.4f} at epoch {epoch}")
-            
-        # Log training progress
-        elapsed_time = time.time() - self.start_time if self.start_time else 0
-        logger.info(f"Epoch {epoch}: mAP={current_map:.4f}, Best={self.best_map:.4f} (epoch {self.best_epoch}), Time={elapsed_time/3600:.1f}h")
-
 def monitor_memory():
     """Monitor memory usage during training"""
     process = psutil.Process(os.getpid())
@@ -1277,15 +1175,15 @@ def main():
             'loss': loss_fn,
             'valid_metrics_list': [
                 DetectionMetrics_050(
-                        score_thres=config.confidence_threshold,
-                        top_k_predictions=config.max_predictions,
-                        num_cls=81,
+                    score_thres=config.confidence_threshold,
+                    top_k_predictions=config.max_predictions,
+                    num_cls=81,
                     normalize_targets=True,
                     post_prediction_callback=PPYoloEPostPredictionCallback(
-                            score_threshold=config.confidence_threshold,
-                            nms_threshold=config.nms_threshold,
-                            nms_top_k=config.max_predictions,
-                            max_predictions=config.max_predictions
+                        score_threshold=config.confidence_threshold,
+                        nms_threshold=config.nms_threshold,
+                        nms_top_k=config.max_predictions,
+                        max_predictions=config.max_predictions
                     )
                 )
             ],
@@ -1296,14 +1194,14 @@ def main():
                 'save_tensorboard_remote': True,
                 'save_checkpoint_as_artifact': True,
                 'project_name': 'license-plate-detection',
-                    'run_name': 'yolo-nas-s-coco-finetuning'
-                },
-                'dropout': config.dropout,
-                'label_smoothing': config.label_smoothing,
-                'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),  # Using absolute path
-                'resume_strict_load': False,
-                'optimizer_params': {'weight_decay': config.weight_decay}
-            }
+                'run_name': 'yolo-nas-s-coco-finetuning'
+            },
+            'dropout': config.dropout,
+            'label_smoothing': config.label_smoothing,
+            'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
+            'resume_strict_load': False,
+            'optimizer_params': {'weight_decay': config.weight_decay}
+        }
 
         # Update dataloader params with absolute paths
         train_data = coco_detection_yolo_format_train(
@@ -1377,12 +1275,6 @@ def main():
             experiment_name='coco_license_plate_detection',
             ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Ensure absolute path
         )
-
-        # Initialize progress callback
-        progress_callback = TrainingProgressCallback()
-        
-        # Add callback to training params
-        train_params['phase_callbacks'] = [progress_callback]
 
         # Validate dataset contents before training
         validate_dataset_contents(combined_dir)
