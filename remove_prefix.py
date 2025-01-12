@@ -4,12 +4,29 @@ from pathlib import Path
 import logging
 import coloredlogs
 
+# Setup custom success level
+SUCCESS_LEVEL = 25  # Between INFO and WARNING
+logging.addLevelName(SUCCESS_LEVEL, 'SUCCESS')
+
+def success(self, message, *args, **kwargs):
+    if self.isEnabledFor(SUCCESS_LEVEL):
+        self._log(SUCCESS_LEVEL, message, args, **kwargs)
+
+# Add success method to Logger class
+logging.Logger.success = success
+
 # Setup logging
 logger = logging.getLogger(__name__)
 coloredlogs.install(
     level='INFO',
     logger=logger,
-    fmt='%(asctime)s - %(levelname)s - %(message)s'
+    fmt='%(asctime)s - %(levelname)s - %(message)s',
+    level_styles={
+        'info': {'color': 'white'},
+        'success': {'color': 'green', 'bold': True},
+        'warning': {'color': 'yellow'},
+        'error': {'color': 'red', 'bold': True}
+    }
 )
 
 def remove_lp_prefix(combined_dir: str) -> None:
