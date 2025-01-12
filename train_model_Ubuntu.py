@@ -582,9 +582,9 @@ def prepare_combined_dataset() -> None:
         # Check if we already have the expected number of license plate images
         logger.info("Step 4/4: Checking license plate data...")
         expected_lp_train = 25470
-        expected_lp_val = 6368
+        expected_lp_val = 1073
         expected_total_train = 95470  # 70000 COCO + 25470 license plate images
-        expected_total_val = 12441   # 6073 COCO + 6368 license plate images
+        expected_total_val = 7146   # 6073 COCO + 1073 license plate images
         
         # Check existing images in combined directory
         try:
@@ -599,7 +599,15 @@ def prepare_combined_dataset() -> None:
             train_coco_images = total_train_images - train_lp_images
             val_coco_images = total_val_images - val_lp_images
             
-            # Check COCO images first
+            logger.info("\n=== Final Dataset Verification ===")
+            logger.info(f"COCO Training: {train_coco_images}/70000")
+            logger.info(f"COCO Validation: {val_coco_images}/6073")
+            logger.info(f"License Plate Training: {train_lp_images}/{expected_lp_train}")
+            logger.info(f"License Plate Validation: {val_lp_images}/{expected_lp_val}")
+            logger.info(f"Total Training: {total_train_images}/{expected_total_train}")
+            logger.info(f"Total Validation: {total_val_images}/{expected_total_val}")
+            
+            # First verify/fix COCO dataset
             if train_coco_images < 70000:
                 logger.warning(f"Missing COCO training images. Found {train_coco_images}/70000")
                 # Trigger COCO dataset processing
