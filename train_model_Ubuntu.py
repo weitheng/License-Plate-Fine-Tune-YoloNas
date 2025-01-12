@@ -807,14 +807,14 @@ def cleanup_downloads():
 
 class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
-        # Initialize with list of phases instead of using bitwise OR
+        # Initialize with correct SuperGradients phase names
         phases = [
-            Phase.TRAIN_BATCH_END,
+            Phase.TRAIN_BATCH_STEP,      # Changed from TRAIN_BATCH_END
             Phase.TRAIN_EPOCH_END,
-            Phase.VALIDATION_BATCH_END,
+            Phase.VALIDATION_BATCH_STEP,  # Changed from VALIDATION_BATCH_END
             Phase.VALIDATION_EPOCH_END,
-            Phase.TRAIN_BATCH_START,
-            Phase.VALIDATION_BATCH_START,
+            Phase.TRAIN_BATCH_STEP,      # Changed from TRAIN_BATCH_START
+            Phase.VALIDATION_BATCH_STEP,  # Changed from VALIDATION_BATCH_START
             Phase.TRAIN_EPOCH_START,
             Phase.VALIDATION_EPOCH_START
         ]
@@ -836,10 +836,14 @@ class TrainingProgressCallback(PhaseCallback):
             self.on_validation_start(context)
         elif phase == Phase.VALIDATION_EPOCH_END:
             self.on_validation_end(context)
-        elif phase == Phase.TRAIN_BATCH_START:
-            self.on_batch_start(context)
-        elif phase == Phase.TRAIN_BATCH_END:
-            self.on_batch_end(context)
+        elif phase == Phase.TRAIN_BATCH_STEP:      # Changed from TRAIN_BATCH_START/END
+            self.on_batch_step(context)            # Combined batch start/end handling
+        elif phase == Phase.VALIDATION_BATCH_STEP:  # Changed from VALIDATION_BATCH_START/END
+            pass                                    # Handle if needed
+            
+    def on_batch_step(self, context: Any) -> None:
+        """Called for each batch step (combines start/end handling)"""
+        self.batch_count += 1
 
     def on_validation_start(self, context: Any) -> None:
         """Called when validation starts"""
