@@ -586,7 +586,7 @@ def prepare_combined_dataset() -> None:
         expected_total_train = 95470  # 70000 COCO + 25470 license plate images
         expected_total_val = 12441   # 6073 COCO + 6368 license plate images
         
-        # Check existing license plate images in combined directory
+        # Check existing images in combined directory
         try:
             total_train_images = len(os.listdir(os.path.join(combined_dir, 'images/train')))
             total_val_images = len(os.listdir(os.path.join(combined_dir, 'images/val')))
@@ -595,31 +595,48 @@ def prepare_combined_dataset() -> None:
             val_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
                                if f.startswith('lp_')])
             
-            # Check both total images and license plate images
-            if (total_train_images == expected_total_train and 
-                total_val_images == expected_total_val and
-                train_lp_images == expected_lp_train and 
+            # Calculate COCO images (non-lp_ prefixed images)
+            train_coco_images = total_train_images - train_lp_images
+            val_coco_images = total_val_images - val_lp_images
+            
+            # Check COCO images first
+            if train_coco_images < 70000:
+                logger.warning(f"Missing COCO training images. Found {train_coco_images}/70000")
+                # Trigger COCO dataset processing
+                raise RuntimeError("Incomplete COCO dataset")
+            
+            if val_coco_images < 6073:
+                logger.warning(f"Missing COCO validation images. Found {val_coco_images}/6073")
+                # Trigger COCO dataset processing
+                raise RuntimeError("Incomplete COCO dataset")
+                
+            logger.success(f"✓ Found correct number of COCO images (train: {train_coco_images}, val: {val_coco_images})")
+            
+            # Now check license plate images
+            if (train_lp_images == expected_lp_train and 
                 val_lp_images == expected_lp_val):
                 logger.success(f"✓ Found expected number of images "
                              f"(train: {total_train_images}, val: {total_val_images}, "
                              f"license plates - train: {train_lp_images}, val: {val_lp_images})")
                 total_copied = train_lp_images + val_lp_images
                 logger.info("=== Dataset Preparation Complete ===\n")
-                return  # Skip copying as we already have the correct number of images
+                return
+
+            # Determine which license plate splits need copying
+            copy_train = train_lp_images < expected_lp_train
+            copy_val = val_lp_images < expected_lp_val
+            
+            if copy_train:
+                logger.info(f"Need to copy license plate training images: {train_lp_images}/{expected_lp_train}")
+            if copy_val:
+                logger.info(f"Need to copy license plate validation images: {val_lp_images}/{expected_lp_val}")
                 
         except Exception as e:
             logger.error(f"Error checking existing license plate images: {e}")
+            copy_train = True
+            copy_val = True
             train_lp_images = 0
             val_lp_images = 0
-            total_train_images = 0
-            total_val_images = 0
-            
-        # If we get here, check if we need to copy
-        if train_lp_images == expected_lp_train and val_lp_images == expected_lp_val:
-            logger.success(f"✓ Found correct number of license plate images, skipping copy")
-            total_copied = train_lp_images + val_lp_images
-            logger.info("=== Dataset Preparation Complete ===\n")
-            return
             
         # If we get here, we need to copy missing license plate images
         logger.info(f"Found {train_lp_images}/{expected_lp_train} training and "
@@ -631,6 +648,12 @@ def prepare_combined_dataset() -> None:
         license_plate_dir = current_dir  # License plate data is in the root directory
             
         for split in ['train', 'val']:
+            # Skip if this split is complete
+            if split == 'train' and not copy_train:
+                continue
+            if split == 'val' and not copy_val:
+                continue
+                
             images_dir = os.path.join(license_plate_dir, 'images', split)
             labels_dir = os.path.join(license_plate_dir, 'labels', split)
             
