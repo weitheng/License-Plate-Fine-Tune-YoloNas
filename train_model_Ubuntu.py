@@ -584,7 +584,7 @@ def prepare_combined_dataset() -> None:
         expected_lp_train = 25470
         expected_lp_val = 1073
         expected_total_train = 95470  # 70000 COCO + 25470 license plate images
-        expected_total_val = 7146   # 6073 COCO + 1073 license plate images
+        expected_total_val = 6073   # 5000 COCO + 1073 license plate images
         
         # Check existing images in combined directory
         try:
