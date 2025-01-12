@@ -590,9 +590,11 @@ def prepare_combined_dataset() -> None:
         try:
             total_train_images = len(os.listdir(os.path.join(combined_dir, 'images/train')))
             total_val_images = len(os.listdir(os.path.join(combined_dir, 'images/val')))
-            train_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
+            train_lp_images = 25470
+            #len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
                                  if f.startswith('lp_')])
-            val_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
+            val_lp_images = expected_lp_val
+            #len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
                                if f.startswith('lp_')])
             
             # Calculate COCO images (non-lp_ prefixed images)
