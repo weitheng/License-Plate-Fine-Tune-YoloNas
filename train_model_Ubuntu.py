@@ -1101,341 +1101,44 @@ def validate_image_paths(data_dir: str) -> None:
         
         logger.success(f"✓ All {len(image_files)} images in {split} split are valid and readable")
 
-def main():
+def handle_model_export(model, trainer, checkpoint_dir: str, export_dir: str, 
+                       dataset_config: dict, config: TrainingConfig) -> None:
+    """
+    Handle model export tasks including checkpointing and ONNX conversion.
+    
+    Args:
+        model: The trained model
+        trainer: The trainer instance
+        checkpoint_dir: Directory for saving checkpoints
+        export_dir: Directory for exporting models
+        dataset_config: Dataset configuration
+        config: Training configuration
+    """
     try:
-        # Parse command line arguments
-        args = parse_args()
-        
-        validate_cuda_setup()
-        # Check GPU availability
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Using device: {device}")
-        if device == "cpu":
-            logger.warning("No GPU detected - training will be slow!")
-
-        # Get absolute paths at the start
-        current_dir = os.path.abspath(os.path.dirname(__file__))
-        data_dir = os.path.abspath(os.path.join(current_dir, 'data'))
-        coco_dir = os.path.abspath(os.path.join(data_dir, 'coco'))
-        combined_dir = os.path.abspath(os.path.join(data_dir, 'combined'))
-        checkpoint_dir = os.path.abspath(os.path.join(current_dir, 'checkpoints'))
-        export_dir = os.path.abspath(os.path.join(current_dir, 'export'))
-        
-        # Validate critical paths early
-        validate_path_is_absolute(combined_dir, "Dataset directory")
-        validate_path_is_absolute(checkpoint_dir, "Checkpoint directory")
-        validate_path_is_absolute(export_dir, "Export directory")
-        onnx_path = os.path.join(os.path.abspath(export_dir), "yolo_nas_s_coco_license_plate.onnx")
-        validate_path_is_absolute(onnx_path, "ONNX export path")
-        
-        # Create all necessary directories with proper permissions
-        for directory in [data_dir, coco_dir, combined_dir, checkpoint_dir, export_dir]:
-            os.makedirs(directory, exist_ok=True)
-            if not os.access(directory, os.W_OK):
-                raise PermissionError(f"No write permission for directory: {directory}")
-
-        logger.info(f"Using directories: checkpoint_dir={checkpoint_dir}, export_dir={export_dir}")
-
-        # Use absolute paths everywhere
-        yaml_path = os.path.join(current_dir, "license_plate_dataset.yaml")
-        if not os.path.exists(yaml_path):
-            raise FileNotFoundError(f"Dataset configuration file not found: {yaml_path}")
-        logger.info(f"Using dataset configuration: {yaml_path}")
-
-        logger.info("Starting training pipeline...")
-        monitor_memory()  # Initial state
-        
-        # Prepare dataset first
-        # prepare_combined_dataset()
-        monitor_memory()  # After dataset prep
-        
-        # After prepare_combined_dataset()
-        logger.info("Verifying dataset structure...")
-        verify_dataset_structure(combined_dir)
-        validate_dataset_contents(combined_dir)
-        logger.info("✓ Dataset validation complete")
-        monitor_memory()  # After validation
-        
-        # Validate final dataset before starting training
-        logger.info("Performing final dataset validation...")
-        dataset_stats = validate_final_dataset(combined_dir, args.skip_lp_checks)
-        
-        # Only check and remove LP prefix if not skipping LP checks
-        if not args.skip_lp_checks:
-            # If no license plate images, try preparing dataset again
-            if (dataset_stats['train']['license_plate'] == 0 or 
-                dataset_stats['val']['license_plate'] == 0):
-                logger.warning("No license plate images found in combined dataset. Attempting to recreate...")
-                prepare_combined_dataset()  # Try preparing dataset again
-                
-                # Remove 'lp_' prefix from files
-                logger.info("Removing 'lp_' prefix from files...")
-                remove_lp_prefix(combined_dir)
-                
-                # Validate dataset again after prefix removal
-                dataset_stats = validate_final_dataset(combined_dir, args.skip_lp_checks)
-        
-        # Log detailed dataset statistics
-        logger.info("\n=== Final Dataset Statistics ===")
-        logger.info("Training Set:")
-        logger.info(f"  - COCO Images: {dataset_stats['train']['coco']}")
-        logger.info(f"  - License Plate Images: {dataset_stats['train']['license_plate']}")
-        logger.info(f"  - Total Training Images: {dataset_stats['train']['total']}")
-        logger.info("\nValidation Set:")
-        logger.info(f"  - COCO Images: {dataset_stats['val']['coco']}")
-        logger.info(f"  - License Plate Images: {dataset_stats['val']['license_plate']}")
-        logger.info(f"  - Total Validation Images: {dataset_stats['val']['total']}")
-        logger.info("==============================\n")
-
-        # Only proceed with training if validation passes
-        if args.skip_lp_checks:
-            if dataset_stats['train']['total'] < 70000:  # Minimum expected total
-                raise RuntimeError(f"Insufficient training images: {dataset_stats['train']['total']}/70000")
-        else:
-            if (dataset_stats['train']['coco'] != 70000 or 
-                dataset_stats['train']['license_plate'] == 0 or 
-                dataset_stats['val']['license_plate'] == 0):
-                raise RuntimeError("Dataset validation failed: Incorrect number of images")
-
-        # Initialize wandb and start training
-        try:
-            logger.info("Initializing Weights & Biases...")
-            wandb.login()
-            wandb.init(project="license-plate-detection", name="yolo-nas-s-coco-finetuning")
-            logger.info("✓ Weights & Biases initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize wandb: {e}")
-            raise
-
-        # Load dataset configuration
-        logger.info("Loading dataset configuration...")
-        dataset_config = load_dataset_config(yaml_path)
-        logger.info("✓ Dataset configuration loaded")
-
-        # Get optimal hardware settings
-        hw_params = assess_hardware_capabilities()
-
-        # Create cache directory if it doesn't exist
-        cache_dir = os.path.expanduser('~/.cache/torch/hub/checkpoints/')
-        os.makedirs(cache_dir, exist_ok=True)
-        if not os.access(cache_dir, os.W_OK):
-            raise PermissionError(f"No write permission for cache directory: {cache_dir}")
-        logger.info(f"Using cache directory: {cache_dir}")
-
-        # Download model weights if needed
-        logger.info("Checking model weights...")
-        l_model_path = os.path.join(cache_dir, 'yolo_nas_l_coco.pth')
-        s_model_path = os.path.join(cache_dir, 'yolo_nas_s_coco.pth')
-
-        if not os.path.exists(l_model_path):
-            logger.info("Downloading YOLO-NAS-L weights...")
-            download_model_weights('YOLO_NAS_L', l_model_path)
-        if not os.path.exists(s_model_path):
-            logger.info("Downloading YOLO-NAS-S weights...")
-            download_model_weights('YOLO_NAS_S', s_model_path)
-        logger.info("✓ Model weights ready")
-
-        # Fix download URLs for YOLO-NAS models
-        logger.info("Fixing model download URLs...")
-        os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
-        os.system('sed -i \'s/sghub.deci.ai/sg-hub-nv.s3.amazonaws.com/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
-        os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
-        os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
-
-        # Initialize model with COCO weights
-        try:
-            logger.info("Initializing model...")
-            model = models.get(Models.YOLO_NAS_S, 
-                             num_classes=81,
-                             pretrained_weights="coco")
-            logger.success("✓ Model initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize model: {e}")
-            raise RuntimeError("Model initialization failed") from e
-        
-        # Define loss function
-        loss_fn = PPYoloELoss(
-            use_static_assigner=False,
-            num_classes=81,
-            reg_max=16,
-            iou_loss_weight=3.0
-        )
-
-        # Get GPU memory if available
-        gpu_memory_gb = 0
-        if torch.cuda.is_available():
-            gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        
-        # Initialize config based on hardware
-        config = TrainingConfig.from_gpu_memory(gpu_memory_gb)
-        
-        # Update training parameters with absolute paths
-        train_params = {
-            'save_ckpt_after_epoch': True,
-            'save_ckpt_dir': os.path.abspath(checkpoint_dir),  # Ensure absolute path
-            'resume': False,
-            'silent_mode': False,
-            'average_best_models': True,
-            'warmup_mode': 'LinearEpochLRWarmup',
-            'warmup_initial_lr': 1e-6,
-            'lr_warmup_epochs': config.warmup_epochs,
-            'initial_lr': config.initial_lr,
-            'lr_mode': 'cosine',
-            'max_epochs': config.num_epochs,
-            'early_stopping_patience': config.early_stopping_patience,
-            'mixed_precision': torch.cuda.is_available(),
-            'loss': loss_fn,
-            'valid_metrics_list': [
-                DetectionMetrics_050(
-                    score_thres=config.confidence_threshold,
-                    top_k_predictions=config.max_predictions,
-                    num_cls=81,
-                    normalize_targets=True,
-                    post_prediction_callback=PPYoloEPostPredictionCallback(
-                        score_threshold=config.confidence_threshold,
-                        nms_threshold=config.nms_threshold,
-                        nms_top_k=config.max_predictions,
-                        max_predictions=config.max_predictions
-                    )
-                )
-            ],
-            'metric_to_watch': 'mAP@0.50',
-            'sg_logger': 'wandb_sg_logger',
-            'sg_logger_params': {
-                'save_checkpoints_remote': True,
-                'save_tensorboard_remote': True,
-                'save_checkpoint_as_artifact': True,
-                'project_name': 'license-plate-detection',
-                'run_name': 'yolo-nas-s-coco-finetuning'
-            },
-            'dropout': config.dropout,
-            'label_smoothing': config.label_smoothing,
-            'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
-            'resume_strict_load': False,
-            'optimizer_params': {'weight_decay': config.weight_decay}
-        }
-
-        # Update dataloader params with absolute paths
-        train_data = coco_detection_yolo_format_train(
-            dataset_params={
-                'data_dir': combined_dir,  # Using absolute path to combined dataset
-                'images_dir': 'images/train',
-                'labels_dir': 'labels/train',
-                'classes': dataset_config['names'],
-                'input_dim': config.input_size,
-            },
-            dataloader_params={
-                'batch_size': config.batch_size,
-                'num_workers': config.num_workers,
-                'shuffle': True,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': True
-            }
-        )
-
-        val_data = coco_detection_yolo_format_val(
-            dataset_params={
-                'data_dir': combined_dir,  # Using absolute path to combined dataset
-                'images_dir': 'images/val',
-                'labels_dir': 'labels/val',
-                'classes': dataset_config['names'],
-                'input_dim': config.input_size,
-            },
-            dataloader_params={
-                'batch_size': config.batch_size,
-                'num_workers': config.num_workers,
-                'shuffle': False,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': False
-            }
-        )
-
-        # Check for existing checkpoint
-        checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'latest_checkpoint.pth'))
-        
-        # Verify the checkpoint directory exists and is writable
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir, exist_ok=True)
-        if not os.access(checkpoint_dir, os.W_OK):
-            raise PermissionError(f"No write permission for checkpoint directory: {checkpoint_dir}")
-            
-        # Initialize training parameters with checkpoint handling
-        if os.path.exists(checkpoint_path) and verify_checkpoint(checkpoint_path):
-            logger.info(f"Found existing checkpoint: {checkpoint_path}")
-            train_params.update({
-                'resume': True,
-                'resume_path': checkpoint_path,
-                'resume_strict_load': False,
-                'load_opt_params': True,    # Load optimizer state
-                'load_ema_as_net': False,   # Don't load EMA weights as main weights
-                'resume_epoch': True        # Continue from the last epoch
-            })
-            logger.info(f"Will resume training from: {checkpoint_path}")
-        else:
-            logger.info("No valid checkpoint found, starting training from scratch")
-            train_params.update({
-                'resume': False,
-                'resume_path': None,
-                'resume_strict_load': False,
-                'load_opt_params': False,
-                'load_ema_as_net': False,
-                'resume_epoch': False
-            })
-
-        # Initialize trainer with explicit absolute paths
-        trainer = Trainer(
-            experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Ensure absolute path
-        )
-
-        # Validate dataset contents before training
-        validate_dataset_contents(combined_dir)
-        
-        # Add the validation call in main() before training
-        validate_training_prerequisites(combined_dir, checkpoint_dir, export_dir, l_model_path, s_model_path)
-        
-        # Before trainer.train()
-        logger.info("Validating training configuration...")
-        validate_training_config(train_params)
-        logger.info("✓ Training configuration validated")
-        
-        monitor_memory()
-        validate_image_paths(combined_dir)
-        
-        if args.skip_lp_checks:
-            logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
-        
-        trainer.train(
-            model=model,
-            training_params=train_params,
-            train_loader=train_data,
-            valid_loader=val_data
-        )
-        # After training
-        monitor_memory()
-        
-        # Cleanup downloaded files
-        cleanup_downloads()
-
-        # Save final model checkpoint with absolute paths
-        final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth'))
+        # Save final model checkpoint
+        final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 
+                                              'coco_license_plate_detection_final.pth'))
         trainer.save_checkpoint(
             model_state=model.state_dict(),
             optimizer_state=None,
             scheduler_state=None,
             checkpoint_path=final_checkpoint_path
         )
+        logger.success(f"✓ Final checkpoint saved to: {final_checkpoint_path}")
 
-        # Generate complete label map file with absolute path
+        # Generate label map file
         label_map_path = os.path.abspath(os.path.join(checkpoint_dir, 'label_map.txt'))
         with open(label_map_path, 'w') as f:
             for idx, class_name in enumerate(dataset_config['names']):
                 f.write(f"{idx}: {class_name}\n")
+        logger.success(f"✓ Label map saved to: {label_map_path}")
 
-        # Export model with error handling
+        # Export to ONNX
         try:
             logger.info("Exporting model to ONNX format...")
-            onnx_path = os.path.join(os.path.abspath(export_dir), "yolo_nas_s_coco_license_plate.onnx")
+            onnx_path = os.path.join(os.path.abspath(export_dir), 
+                                   "yolo_nas_s_coco_license_plate.onnx")
+            
             if not os.access(os.path.dirname(onnx_path), os.W_OK):
                 raise PermissionError(f"No write permission for export directory: {export_dir}")
                 
@@ -1447,22 +1150,117 @@ def main():
                 input_image_shape=config.export_image_size
             )
             logger.success(f"✓ Model exported successfully to {onnx_path}")
+            
         except Exception as e:
-            logger.error(f"Failed to export model: {e}")
+            logger.error(f"Failed to export model to ONNX: {e}")
             raise
-
-        logger.success("Training completed!")
-        logger.info(f"Checkpoint saved to: {final_checkpoint_path}")
-        logger.info(f"Label map saved to: {label_map_path}")
-        logger.info(f"ONNX model exported to: {onnx_path}")
-
-        # Finish wandb session
-        wandb.finish()
-
+            
     except Exception as e:
-        logger.error(f"Error during training: {e}")
-        wandb.finish()
+        logger.error(f"Error during model export: {e}")
         raise
+
+def main():
+    try:
+        # Initial setup
+        args = parse_args()
+        validate_cuda_setup()
+        
+        # Check GPU availability
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Using device: {device}")
+        if device == "cpu":
+            logger.warning("No GPU detected - training will be slow!")
+            
+        # Setup directories and get paths
+        paths = setup_directories()
+        
+        # Use paths from the setup_directories result
+        current_dir = paths['current_dir']
+        data_dir = paths['data_dir']
+        coco_dir = paths['coco_dir']
+        combined_dir = paths['combined_dir']
+        checkpoint_dir = paths['checkpoint_dir']
+        export_dir = paths['export_dir']
+        cache_dir = paths['cache_dir']
+        yaml_path = paths['yaml_path']
+        
+        logger.info("Starting training pipeline...")
+        monitor_memory()  # Initial state
+        
+        try:
+            # Dataset preparation and validation
+            logger.info("Verifying dataset structure...")
+            verify_dataset_structure(combined_dir)
+            validate_dataset_contents(combined_dir)
+            logger.info("✓ Dataset validation complete")
+            monitor_memory()
+            
+            # Validate final dataset
+            logger.info("Performing final dataset validation...")
+            dataset_stats = validate_final_dataset(combined_dir, args.skip_lp_checks)
+            
+            # Handle license plate checks
+            if not args.skip_lp_checks:
+                handle_license_plate_data(combined_dir, dataset_stats)
+            
+            # Log dataset statistics
+            log_dataset_statistics(dataset_stats)
+            
+            # Validate dataset size
+            validate_dataset_size(dataset_stats, args.skip_lp_checks)
+            
+            # Initialize training components
+            try:
+                # Initialize wandb
+                setup_wandb()
+                
+                # Load configurations
+                dataset_config = load_dataset_config(yaml_path)
+                hw_params = assess_hardware_capabilities()
+                
+                # Setup model
+                model, cache_dir = setup_model()
+                
+                # Initialize training parameters
+                train_params = setup_training_params(checkpoint_dir, config)
+                
+                # Setup data loaders
+                train_data, val_data = setup_data_loaders(combined_dir, dataset_config, config)
+                
+                # Initialize trainer
+                trainer = setup_trainer(checkpoint_dir)
+                
+                # Validate everything before training
+                validate_training_prerequisites(combined_dir, checkpoint_dir, export_dir, 
+                                             l_model_path, s_model_path)
+                validate_training_config(train_params)
+                validate_image_paths(combined_dir)
+                
+                # Start training
+                if args.skip_lp_checks:
+                    logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
+                
+                trainer.train(model=model, training_params=train_params,
+                            train_loader=train_data, valid_loader=val_data)
+                
+                # Post-training tasks
+                handle_model_export(model, trainer, checkpoint_dir, export_dir, 
+                                  dataset_config, config)
+                
+            except Exception as e:
+                logger.error(f"Error during training setup/execution: {e}")
+                raise
+                
+        except Exception as e:
+            logger.error(f"Error during dataset preparation/validation: {e}")
+            raise
+            
+    except Exception as e:
+        logger.error(f"Critical error in training pipeline: {e}")
+        if wandb.run is not None:
+            wandb.finish()
+        raise
+        
     finally:
         # Cleanup
         cleanup_downloads()
@@ -1471,6 +1269,40 @@ def main():
         # Close wandb run if it exists
         if wandb.run is not None:
             wandb.finish()
+
+def create_directory_with_check(directory: str) -> None:
+    """Create directory and verify it exists and is writable"""
+    try:
+        os.makedirs(directory, exist_ok=True)
+        if not os.path.exists(directory):
+            raise RuntimeError(f"Failed to create directory: {directory}")
+        if not os.access(directory, os.W_OK):
+            raise PermissionError(f"Directory exists but is not writable: {directory}")
+        logger.info(f"Created/verified directory: {directory}")
+    except Exception as e:
+        logger.error(f"Error creating directory {directory}: {str(e)}")
+        raise
+
+def verify_directory_structure(base_dir: str) -> None:
+    """Verify the complete directory structure exists and is writable"""
+    required_structure = {
+        'images': ['train', 'val'],
+        'labels': ['train', 'val']
+    }
+    
+    for parent, subdirs in required_structure.items():
+        parent_path = os.path.join(base_dir, parent)
+        if not os.path.exists(parent_path):
+            raise RuntimeError(f"Missing required directory: {parent_path}")
+            
+        for subdir in subdirs:
+            full_path = os.path.join(parent_path, subdir)
+            if not os.path.exists(full_path):
+                raise RuntimeError(f"Missing required subdirectory: {full_path}")
+            if not os.access(full_path, os.W_OK):
+                raise PermissionError(f"Directory not writable: {full_path}")
+    
+    logger.success("✓ Directory structure verified")
 
 # Call at start of main()
 log_environment_info()
