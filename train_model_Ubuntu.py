@@ -582,82 +582,99 @@ def prepare_combined_dataset() -> None:
         # Check if we already have the expected number of license plate images
         logger.info("Step 4/4: Checking license plate data...")
         expected_lp_train = 25470
-        expected_lp_val = 6368  # Add validation set expectation
+        expected_lp_val = 6368
+        expected_total_train = 95470  # 70000 COCO + 25470 license plate images
+        expected_total_val = 12441   # 6073 COCO + 6368 license plate images
         
         # Check existing license plate images in combined directory
         try:
+            total_train_images = len(os.listdir(os.path.join(combined_dir, 'images/train')))
+            total_val_images = len(os.listdir(os.path.join(combined_dir, 'images/val')))
             train_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
                                  if f.startswith('lp_')])
             val_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
                                if f.startswith('lp_')])
+            
+            # Check both total images and license plate images
+            if (total_train_images == expected_total_train and 
+                total_val_images == expected_total_val and
+                train_lp_images == expected_lp_train and 
+                val_lp_images == expected_lp_val):
+                logger.success(f"✓ Found expected number of images "
+                             f"(train: {total_train_images}, val: {total_val_images}, "
+                             f"license plates - train: {train_lp_images}, val: {val_lp_images})")
+                total_copied = train_lp_images + val_lp_images
+                return  # Skip copying as we already have the correct number of images
+                
         except Exception as e:
             logger.error(f"Error checking existing license plate images: {e}")
             train_lp_images = 0
             val_lp_images = 0
-        
-        if train_lp_images == expected_lp_train and val_lp_images == expected_lp_val:
-            logger.success(f"✓ Found expected number of license plate images (train: {expected_lp_train}, val: {expected_lp_val})")
-            total_copied = train_lp_images + val_lp_images
-        else:
-            logger.info(f"Found {train_lp_images}/{expected_lp_train} license plate images. Copying missing data...")
-            total_copied = 0
+            total_train_images = 0
+            total_val_images = 0
             
-            # Use absolute paths for license plate data directories
-            license_plate_dir = current_dir  # License plate data is in the root directory
+        # If we get here, we need to copy missing license plate images
+        logger.info(f"Found {train_lp_images}/{expected_lp_train} training and "
+                   f"{val_lp_images}/{expected_lp_val} validation license plate images. "
+                   f"Copying missing data...")
+        total_copied = 0
             
-            for split in ['train', 'val']:
-                images_dir = os.path.join(license_plate_dir, 'images', split)
-                labels_dir = os.path.join(license_plate_dir, 'labels', split)
-                
-                logger.info(f"Looking for license plate data in: {images_dir}")
-                
-                if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
-                    logger.error(f"License plate directories not found: {images_dir} or {labels_dir}")
-                    continue
+        # Use absolute paths for license plate data directories
+        license_plate_dir = current_dir  # License plate data is in the root directory
+            
+        for split in ['train', 'val']:
+            images_dir = os.path.join(license_plate_dir, 'images', split)
+            labels_dir = os.path.join(license_plate_dir, 'labels', split)
+            
+            logger.info(f"Looking for license plate data in: {images_dir}")
+            
+            if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
+                logger.error(f"License plate directories not found: {images_dir} or {labels_dir}")
+                continue
                     
-                label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
-                
-                if not label_files:
-                    logger.warning(f"No label files found in {labels_dir}")
-                    continue
+            label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
+            
+            if not label_files:
+                logger.warning(f"No label files found in {labels_dir}")
+                continue
                     
-                logger.info(f"Found {len(label_files)} label files in {split} split")
-                
-                with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
-                    for label_file in label_files:
-                        img_base = label_file.replace('.txt', '')
-                        img_found = False
+            logger.info(f"Found {len(label_files)} label files in {split} split")
+            
+            with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
+                for label_file in label_files:
+                    img_base = label_file.replace('.txt', '')
+                    img_found = False
+                    
+                    # Try all possible image extensions
+                    for ext in ['.jpg', '.jpeg', '.png']:
+                        img_file = img_base + ext
+                        img_path = os.path.join(images_dir, img_file)
                         
-                        # Try all possible image extensions
-                        for ext in ['.jpg', '.jpeg', '.png']:
-                            img_file = img_base + ext
-                            img_path = os.path.join(images_dir, img_file)
-                            
-                            if os.path.exists(img_path):
-                                try:
-                                    # Copy files with prefix 'lp_'
-                                    dst_img = os.path.join(combined_dir, 'images', split, f'lp_{img_file}')
-                                    dst_label = os.path.join(combined_dir, 'labels', split, f'lp_{label_file}')
-                                    
-                                    # Use shutil.copy2 for better error handling
-                                    import shutil
-                                    shutil.copy2(img_path, dst_img)
-                                    shutil.copy2(os.path.join(labels_dir, label_file), dst_label)
-                                    
-                                    # Verify the copy
-                                    if os.path.exists(dst_img) and os.path.exists(dst_label):
-                                        total_copied += 1
-                                        img_found = True
-                                        break
-                                    else:
-                                        logger.error(f"Failed to verify copied files for {img_base}")
-                                except Exception as e:
-                                    logger.error(f"Error copying files for {img_base}: {e}")
-                        
-                        if not img_found:
-                            logger.warning(f"No matching image found for label: {label_file}")
-                        
-                        pbar.update(1)
+                        if os.path.exists(img_path):
+                            try:
+                                # Copy files with prefix 'lp_'
+                                dst_img = os.path.join(combined_dir, 'images', split, f'lp_{img_file}')
+                                dst_label = os.path.join(combined_dir, 'labels', split, f'lp_{label_file}')
+                                
+                                # Use shutil.copy2 for better error handling
+                                import shutil
+                                shutil.copy2(img_path, dst_img)
+                                shutil.copy2(os.path.join(labels_dir, label_file), dst_label)
+                                
+                                # Verify the copy
+                                if os.path.exists(dst_img) and os.path.exists(dst_label):
+                                    total_copied += 1
+                                    img_found = True
+                                    break
+                                else:
+                                    logger.error(f"Failed to verify copied files for {img_base}")
+                            except Exception as e:
+                                logger.error(f"Error copying files for {img_base}: {e}")
+                    
+                    if not img_found:
+                        logger.warning(f"No matching image found for label: {label_file}")
+                    
+                    pbar.update(1)
                 
         if total_copied == 0:
             logger.error("No license plate images were copied! Check the source directories and permissions.")
