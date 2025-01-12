@@ -807,11 +807,18 @@ def cleanup_downloads():
 
 class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
-        # Initialize with correct phase names from SuperGradients
-        super().__init__(Phase.TRAIN_BATCH_END | Phase.TRAIN_EPOCH_END | 
-                        Phase.VALIDATION_BATCH_END | Phase.VALIDATION_EPOCH_END |
-                        Phase.TRAIN_BATCH_START | Phase.VALIDATION_BATCH_START |
-                        Phase.TRAIN_EPOCH_START | Phase.VALIDATION_EPOCH_START)
+        # Initialize with list of phases instead of using bitwise OR
+        phases = [
+            Phase.TRAIN_BATCH_END,
+            Phase.TRAIN_EPOCH_END,
+            Phase.VALIDATION_BATCH_END,
+            Phase.VALIDATION_EPOCH_END,
+            Phase.TRAIN_BATCH_START,
+            Phase.VALIDATION_BATCH_START,
+            Phase.TRAIN_EPOCH_START,
+            Phase.VALIDATION_EPOCH_START
+        ]
+        super().__init__(phases)
         self.best_map: float = 0
         self.best_epoch: int = 0
         self.start_time: Optional[float] = None
