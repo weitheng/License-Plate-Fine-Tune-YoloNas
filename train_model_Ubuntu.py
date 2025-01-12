@@ -1004,6 +1004,57 @@ def validate_final_dataset(combined_dir: str) -> Dict[str, Dict[str, int]]:
     logger.success("✓ Dataset validation complete")
     return stats
 
+def validate_image_paths(data_dir: str) -> None:
+    """Validate that all image files referenced in labels exist"""
+    logger.info("Validating image paths...")
+    
+    for split in ['train', 'val']:
+        images_dir = os.path.join(data_dir, f'images/{split}')
+        labels_dir = os.path.join(data_dir, f'labels/{split}')
+        
+        # Get all image files
+        image_files = {f.lower() for f in os.listdir(images_dir) 
+                      if f.endswith(('.jpg', '.jpeg', '.png'))}
+        
+        missing_images = []
+        
+        # Check each label file's corresponding image
+        for label_file in os.listdir(labels_dir):
+            if not label_file.endswith('.txt'):
+                continue
+                
+            # Get base name without extension
+            base_name = os.path.splitext(label_file)[0]
+            
+            # Check for image with different extensions
+            image_found = False
+            for ext in ['.jpg', '.jpeg', '.png']:
+                possible_image = f"{base_name}{ext}".lower()
+                if possible_image in image_files:
+                    image_found = True
+                    # Verify file is actually readable
+                    img_path = os.path.join(images_dir, possible_image)
+                    try:
+                        with open(img_path, 'rb') as f:
+                            # Try to read first few bytes
+                            f.read(1024)
+                    except Exception as e:
+                        logger.error(f"Cannot read image file {img_path}: {e}")
+                        missing_images.append(possible_image)
+                    break
+            
+            if not image_found:
+                missing_images.append(f"{base_name}.*")
+        
+        if missing_images:
+            raise RuntimeError(
+                f"Missing or unreadable images in {split} split:\n" + 
+                "\n".join(missing_images[:10]) +
+                f"\n... and {len(missing_images) - 10} more" if len(missing_images) > 10 else ""
+            )
+        
+        logger.success(f"✓ All {len(image_files)} images in {split} split are valid and readable")
+
 def main():
     try:
         validate_cuda_setup()
@@ -1288,6 +1339,8 @@ def main():
         logger.info("✓ Training configuration validated")
         
         monitor_memory()
+        validate_image_paths(combined_dir)
+        
         trainer.train(
             model=model,
             training_params=train_params,
