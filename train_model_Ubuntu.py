@@ -534,11 +534,15 @@ def prepare_combined_dataset() -> None:
         combined_dir = os.path.abspath(os.path.join(current_dir, 'data', 'combined'))
         coco_dir = os.path.abspath(os.path.join(current_dir, 'data', 'coco'))
         
-        # Create directories
-        for split in ['train', 'val']:
-            os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
-            os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
-        logger.success("✓ Directory structure created")
+        # Create directories with error handling
+        try:
+            for split in ['train', 'val']:
+                os.makedirs(os.path.join(combined_dir, f'images/{split}'), exist_ok=True)
+                os.makedirs(os.path.join(combined_dir, f'labels/{split}'), exist_ok=True)
+            logger.success("✓ Directory structure created")
+        except Exception as e:
+            logger.error(f"Failed to create directory structure: {e}")
+            raise
 
         # Check if COCO dataset already exists and is valid
         logger.info("Step 2/4: Processing COCO dataset...")
@@ -575,67 +579,86 @@ def prepare_combined_dataset() -> None:
                 logger.warning(f"   - Existing dataset invalid: {e}")
                 logger.info("   - Will recreate combined dataset")
 
-        # Always process license plate data to verify
-        logger.info("Step 4/4: Processing license plate data...")
-        total_copied = 0
+        # Check if we already have the expected number of license plate images
+        logger.info("Step 4/4: Checking license plate data...")
+        expected_lp_train = 25470
+        expected_lp_val = 6368  # Add validation set expectation
         
-        # Use absolute paths for license plate data directories
-        license_plate_dir = current_dir  # License plate data is in the root directory
+        # Check existing license plate images in combined directory
+        try:
+            train_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
+                                 if f.startswith('lp_')])
+            val_lp_images = len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
+                               if f.startswith('lp_')])
+        except Exception as e:
+            logger.error(f"Error checking existing license plate images: {e}")
+            train_lp_images = 0
+            val_lp_images = 0
         
-        for split in ['train', 'val']:
-            images_dir = os.path.join(license_plate_dir, 'images', split)
-            labels_dir = os.path.join(license_plate_dir, 'labels', split)
+        if train_lp_images == expected_lp_train and val_lp_images == expected_lp_val:
+            logger.success(f"✓ Found expected number of license plate images (train: {expected_lp_train}, val: {expected_lp_val})")
+            total_copied = train_lp_images + val_lp_images
+        else:
+            logger.info(f"Found {train_lp_images}/{expected_lp_train} license plate images. Copying missing data...")
+            total_copied = 0
             
-            logger.info(f"Looking for license plate data in: {images_dir}")
+            # Use absolute paths for license plate data directories
+            license_plate_dir = current_dir  # License plate data is in the root directory
             
-            if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
-                logger.error(f"License plate directories not found: {images_dir} or {labels_dir}")
-                continue
+            for split in ['train', 'val']:
+                images_dir = os.path.join(license_plate_dir, 'images', split)
+                labels_dir = os.path.join(license_plate_dir, 'labels', split)
                 
-            label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
-            
-            if not label_files:
-                logger.warning(f"No label files found in {labels_dir}")
-                continue
+                logger.info(f"Looking for license plate data in: {images_dir}")
                 
-            logger.info(f"Found {len(label_files)} label files in {split} split")
-            
-            with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
-                for label_file in label_files:
-                    img_base = label_file.replace('.txt', '')
-                    img_found = False
+                if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
+                    logger.error(f"License plate directories not found: {images_dir} or {labels_dir}")
+                    continue
                     
-                    # Try all possible image extensions
-                    for ext in ['.jpg', '.jpeg', '.png']:
-                        img_file = img_base + ext
-                        img_path = os.path.join(images_dir, img_file)
+                label_files = [f for f in os.listdir(labels_dir) if f.endswith('.txt')]
+                
+                if not label_files:
+                    logger.warning(f"No label files found in {labels_dir}")
+                    continue
+                    
+                logger.info(f"Found {len(label_files)} label files in {split} split")
+                
+                with tqdm(total=len(label_files), desc=f"Copying {split} split") as pbar:
+                    for label_file in label_files:
+                        img_base = label_file.replace('.txt', '')
+                        img_found = False
                         
-                        if os.path.exists(img_path):
-                            try:
-                                # Copy files with prefix 'lp_'
-                                dst_img = os.path.join(combined_dir, 'images', split, f'lp_{img_file}')
-                                dst_label = os.path.join(combined_dir, 'labels', split, f'lp_{label_file}')
-                                
-                                # Use shutil.copy2 for better error handling
-                                import shutil
-                                shutil.copy2(img_path, dst_img)
-                                shutil.copy2(os.path.join(labels_dir, label_file), dst_label)
-                                
-                                # Verify the copy
-                                if os.path.exists(dst_img) and os.path.exists(dst_label):
-                                    total_copied += 1
-                                    img_found = True
-                                    break
-                                else:
-                                    logger.error(f"Failed to verify copied files for {img_base}")
-                            except Exception as e:
-                                logger.error(f"Error copying files for {img_base}: {e}")
-                    
-                    if not img_found:
-                        logger.warning(f"No matching image found for label: {label_file}")
-                    
-                    pbar.update(1)
-            
+                        # Try all possible image extensions
+                        for ext in ['.jpg', '.jpeg', '.png']:
+                            img_file = img_base + ext
+                            img_path = os.path.join(images_dir, img_file)
+                            
+                            if os.path.exists(img_path):
+                                try:
+                                    # Copy files with prefix 'lp_'
+                                    dst_img = os.path.join(combined_dir, 'images', split, f'lp_{img_file}')
+                                    dst_label = os.path.join(combined_dir, 'labels', split, f'lp_{label_file}')
+                                    
+                                    # Use shutil.copy2 for better error handling
+                                    import shutil
+                                    shutil.copy2(img_path, dst_img)
+                                    shutil.copy2(os.path.join(labels_dir, label_file), dst_label)
+                                    
+                                    # Verify the copy
+                                    if os.path.exists(dst_img) and os.path.exists(dst_label):
+                                        total_copied += 1
+                                        img_found = True
+                                        break
+                                    else:
+                                        logger.error(f"Failed to verify copied files for {img_base}")
+                                except Exception as e:
+                                    logger.error(f"Error copying files for {img_base}: {e}")
+                        
+                        if not img_found:
+                            logger.warning(f"No matching image found for label: {label_file}")
+                        
+                        pbar.update(1)
+                
         if total_copied == 0:
             logger.error("No license plate images were copied! Check the source directories and permissions.")
             logger.info("License plate data should be in:")
@@ -651,6 +674,24 @@ def prepare_combined_dataset() -> None:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        # After copying completes, verify the final state
+        try:
+            final_train_lp = len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
+                                if f.startswith('lp_')])
+            final_val_lp = len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
+                              if f.startswith('lp_')])
+            
+            if final_train_lp != expected_lp_train or final_val_lp != expected_lp_val:
+                logger.error(f"Final verification failed: Expected {expected_lp_train} training and {expected_lp_val} validation images, "
+                            f"but found {final_train_lp} and {final_val_lp}")
+                raise RuntimeError("Dataset preparation failed final verification")
+            else:
+                logger.success(f"✓ Final verification passed: Found {final_train_lp} training and {final_val_lp} validation images")
+        except Exception as e:
+            logger.error(f"Error during final verification: {e}")
+            raise
+
     except Exception as e:
         logger.error(f"Error in dataset preparation: {e}")
         raise
@@ -710,32 +751,89 @@ def cleanup_downloads():
 
 class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
-        # Initialize with 'train' phase since this is a training callback
-        super().__init__(phase=Phase.TRAIN_EPOCH_END)
+        # Initialize with ALL required phases
+        super().__init__(Phase.TRAIN_START | Phase.TRAIN_END | 
+                        Phase.TRAIN_EPOCH_START | Phase.TRAIN_EPOCH_END |
+                        Phase.VALIDATION_START | Phase.VALIDATION_END |
+                        Phase.TRAIN_BATCH_START | Phase.TRAIN_BATCH_END |
+                        Phase.TRAIN_LOADER_START | Phase.TRAIN_LOADER_END)
         self.best_map: float = 0
         self.best_epoch: int = 0
         self.start_time: Optional[float] = None
+        self.batch_count: int = 0
+        self.epoch_start_time: Optional[float] = None
         
+    def __call__(self, context: Any) -> None:
+        """Override base __call__ to prevent NotImplementedError"""
+        phase = context.phase
+        if phase == Phase.TRAIN_START:
+            self.on_training_start(context)
+        elif phase == Phase.TRAIN_END:
+            self.on_training_end(context)
+        elif phase == Phase.TRAIN_EPOCH_START:
+            self.on_epoch_start(context)
+        elif phase == Phase.TRAIN_EPOCH_END:
+            self.on_epoch_end(context)
+        elif phase == Phase.VALIDATION_START:
+            self.on_validation_start(context)
+        elif phase == Phase.VALIDATION_END:
+            self.on_validation_end(context)
+        elif phase == Phase.TRAIN_BATCH_START:
+            self.on_batch_start(context)
+        elif phase == Phase.TRAIN_BATCH_END:
+            self.on_batch_end(context)
+        elif phase == Phase.TRAIN_LOADER_START:
+            self.on_train_loader_start(context)
+        elif phase == Phase.TRAIN_LOADER_END:
+            self.on_train_loader_end(context)
+
     def on_validation_start(self, context: Any) -> None:
+        """Called when validation starts"""
         pass
         
     def on_validation_end(self, context: Any) -> None:
-        pass
+        """Called when validation ends"""
+        metrics = context.metrics_dict
+        current_map = metrics.get('mAP@0.50', 0)
+        if current_map > self.best_map:
+            self.best_map = current_map
+            self.best_epoch = context.epoch
+            logger.info(f"New best mAP: {self.best_map:.4f} at epoch {context.epoch}")
         
     def on_epoch_start(self, context: Any) -> None:
-        pass
+        """Called when epoch starts"""
+        self.batch_count = 0
+        self.epoch_start_time = time.time()
         
     def on_batch_start(self, context: Any) -> None:
+        """Called when batch starts"""
         pass
         
     def on_batch_end(self, context: Any) -> None:
+        """Called when batch ends"""
+        self.batch_count += 1
+        
+    def on_train_loader_start(self, context: Any) -> None:
+        """Called when train loader starts"""
         pass
+
+    def on_train_loader_end(self, context: Any) -> None:
+        """Called when train loader ends"""
+        if self.epoch_start_time:
+            epoch_time = time.time() - self.epoch_start_time
+            logger.info(f"Epoch training time: {epoch_time:.2f}s")
         
     def on_training_start(self, context: Any) -> None:
         """Called when training starts"""
         self.start_time = time.time()
         logger.info("Training started")
         
+    def on_training_end(self, context: Any) -> None:
+        """Called when training ends"""
+        elapsed_time = time.time() - self.start_time if self.start_time else 0
+        logger.info(f"Training completed in {elapsed_time/3600:.1f}h")
+        logger.info(f"Best mAP: {self.best_map:.4f} at epoch {self.best_epoch}")
+
     def on_epoch_end(self, context: Any) -> None:
         """Called at the end of each epoch"""
         epoch = context.epoch
@@ -748,14 +846,8 @@ class TrainingProgressCallback(PhaseCallback):
             logger.info(f"New best mAP: {self.best_map:.4f} at epoch {epoch}")
             
         # Log training progress
-        elapsed_time = time.time() - self.start_time
+        elapsed_time = time.time() - self.start_time if self.start_time else 0
         logger.info(f"Epoch {epoch}: mAP={current_map:.4f}, Best={self.best_map:.4f} (epoch {self.best_epoch}), Time={elapsed_time/3600:.1f}h")
-    
-    def on_training_end(self, context: Any) -> None:
-        """Called when training ends"""
-        elapsed_time = time.time() - self.start_time
-        logger.info(f"Training completed in {elapsed_time/3600:.1f}h")
-        logger.info(f"Best mAP: {self.best_map:.4f} at epoch {self.best_epoch}")
 
 def monitor_memory():
     """Monitor memory usage during training"""
