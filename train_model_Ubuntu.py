@@ -593,7 +593,7 @@ def prepare_combined_dataset() -> None:
             train_lp_images = 25470
             # len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
             #                      if f.startswith('lp_')])
-            val_lp_images = expected_lp_val
+            val_lp_images = 1073
             # len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
             #                    if f.startswith('lp_')])
             
