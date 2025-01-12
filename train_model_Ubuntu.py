@@ -807,12 +807,11 @@ def cleanup_downloads():
 
 class TrainingProgressCallback(PhaseCallback):
     def __init__(self) -> None:
-        # Initialize with ALL required phases
-        super().__init__(Phase.TRAIN_START | Phase.TRAIN_END | 
-                        Phase.TRAIN_EPOCH_START | Phase.TRAIN_EPOCH_END |
-                        Phase.VALIDATION_START | Phase.VALIDATION_END |
-                        Phase.TRAIN_BATCH_START | Phase.TRAIN_BATCH_END |
-                        Phase.TRAIN_LOADER_START | Phase.TRAIN_LOADER_END)
+        # Initialize with correct phase names from SuperGradients
+        super().__init__(Phase.TRAIN_BATCH_END | Phase.TRAIN_EPOCH_END | 
+                        Phase.VALIDATION_BATCH_END | Phase.VALIDATION_EPOCH_END |
+                        Phase.TRAIN_BATCH_START | Phase.VALIDATION_BATCH_START |
+                        Phase.TRAIN_EPOCH_START | Phase.VALIDATION_EPOCH_START)
         self.best_map: float = 0
         self.best_epoch: int = 0
         self.start_time: Optional[float] = None
@@ -822,26 +821,18 @@ class TrainingProgressCallback(PhaseCallback):
     def __call__(self, context: Any) -> None:
         """Override base __call__ to prevent NotImplementedError"""
         phase = context.phase
-        if phase == Phase.TRAIN_START:
-            self.on_training_start(context)
-        elif phase == Phase.TRAIN_END:
-            self.on_training_end(context)
-        elif phase == Phase.TRAIN_EPOCH_START:
+        if phase == Phase.TRAIN_EPOCH_START:
             self.on_epoch_start(context)
         elif phase == Phase.TRAIN_EPOCH_END:
             self.on_epoch_end(context)
-        elif phase == Phase.VALIDATION_START:
+        elif phase == Phase.VALIDATION_EPOCH_START:
             self.on_validation_start(context)
-        elif phase == Phase.VALIDATION_END:
+        elif phase == Phase.VALIDATION_EPOCH_END:
             self.on_validation_end(context)
         elif phase == Phase.TRAIN_BATCH_START:
             self.on_batch_start(context)
         elif phase == Phase.TRAIN_BATCH_END:
             self.on_batch_end(context)
-        elif phase == Phase.TRAIN_LOADER_START:
-            self.on_train_loader_start(context)
-        elif phase == Phase.TRAIN_LOADER_END:
-            self.on_train_loader_end(context)
 
     def on_validation_start(self, context: Any) -> None:
         """Called when validation starts"""
