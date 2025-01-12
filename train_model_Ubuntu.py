@@ -601,7 +601,7 @@ def prepare_combined_dataset() -> None:
             
             logger.info("\n=== Final Dataset Verification ===")
             logger.info(f"COCO Training: {train_coco_images}/70000")
-            logger.info(f"COCO Validation: {val_coco_images}/6073")
+            logger.info(f"COCO Validation: {val_coco_images}/5000")
             logger.info(f"License Plate Training: {train_lp_images}/{expected_lp_train}")
             logger.info(f"License Plate Validation: {val_lp_images}/{expected_lp_val}")
             logger.info(f"Total Training: {total_train_images}/{expected_total_train}")
@@ -613,8 +613,8 @@ def prepare_combined_dataset() -> None:
                 # Trigger COCO dataset processing
                 raise RuntimeError("Incomplete COCO dataset")
             
-            if val_coco_images < 6073:
-                logger.warning(f"Missing COCO validation images. Found {val_coco_images}/6073")
+            if val_coco_images < 5000:
+                logger.warning(f"Missing COCO validation images. Found {val_coco_images}/5000")
                 # Trigger COCO dataset processing
                 raise RuntimeError("Incomplete COCO dataset")
                 
