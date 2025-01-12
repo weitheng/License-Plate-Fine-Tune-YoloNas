@@ -604,6 +604,7 @@ def prepare_combined_dataset() -> None:
                              f"(train: {total_train_images}, val: {total_val_images}, "
                              f"license plates - train: {train_lp_images}, val: {val_lp_images})")
                 total_copied = train_lp_images + val_lp_images
+                logger.info("=== Dataset Preparation Complete ===\n")
                 return  # Skip copying as we already have the correct number of images
                 
         except Exception as e:
@@ -612,6 +613,13 @@ def prepare_combined_dataset() -> None:
             val_lp_images = 0
             total_train_images = 0
             total_val_images = 0
+            
+        # If we get here, check if we need to copy
+        if train_lp_images == expected_lp_train and val_lp_images == expected_lp_val:
+            logger.success(f"✓ Found correct number of license plate images, skipping copy")
+            total_copied = train_lp_images + val_lp_images
+            logger.info("=== Dataset Preparation Complete ===\n")
+            return
             
         # If we get here, we need to copy missing license plate images
         logger.info(f"Found {train_lp_images}/{expected_lp_train} training and "
