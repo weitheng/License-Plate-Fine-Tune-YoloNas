@@ -811,10 +811,10 @@ class TrainingProgressCallback(PhaseCallback):
         phases = [
             Phase.TRAIN_BATCH_STEP,      # Changed from TRAIN_BATCH_END
             Phase.TRAIN_EPOCH_END,
-            Phase.VALIDATION_BATCH_STEP,  # Changed from VALIDATION_BATCH_END
+            Phase.VALIDATION_BATCH_END,  # Changed from VALIDATION_BATCH_END
             Phase.VALIDATION_EPOCH_END,
             Phase.TRAIN_BATCH_STEP,      # Changed from TRAIN_BATCH_START
-            Phase.VALIDATION_BATCH_STEP,  # Changed from VALIDATION_BATCH_START
+            Phase.VALIDATION_BATCH_END,  # Changed from VALIDATION_BATCH_START
             Phase.TRAIN_EPOCH_START,
             Phase.VALIDATION_EPOCH_START
         ]
