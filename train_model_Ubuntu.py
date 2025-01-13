@@ -1133,8 +1133,7 @@ def verify_dataset_structure(data_dir: str) -> None:
 
 def validate_training_config(train_params: dict) -> None:
     """Validate training configuration parameters"""
-    required_keys = ['resume', 'resume_strict_load', 'load_opt_params', 
-                    'load_ema_as_net', 'resume_epoch', 'loss', 'metric_to_watch',
+    required_keys = ['resume', 'resume_epoch', 'loss', 'metric_to_watch',
                     'valid_metrics_list', 'max_epochs', 'initial_lr']
     for key in required_keys:
         if key not in train_params:
@@ -1444,7 +1443,6 @@ def main():
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
-            'resume_strict_load': False,
             'optimizer_params': {'weight_decay': config.weight_decay}
         }
 
