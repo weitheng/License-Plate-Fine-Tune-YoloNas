@@ -1111,12 +1111,40 @@ def main():
                 raise PermissionError(f"No write permission for directory: {directory}")
 
         logger.info(f"Using directories: checkpoint_dir={checkpoint_dir}, export_dir={export_dir}")
+        # Create required subdirectories in combined_dir
+        for split in ['train', 'val']:
+            for subdir in ['images', 'labels']:
+                path = os.path.join(combined_dir, subdir, split)
+                os.makedirs(path, exist_ok=True)
+                if not os.access(path, os.W_OK):
+                    raise PermissionError(f"No write permission for directory: {path}")
 
         # Use absolute paths everywhere
         yaml_path = os.path.join(current_dir, "license_plate_dataset.yaml")
         if not os.path.exists(yaml_path):
             raise FileNotFoundError(f"Dataset configuration file not found: {yaml_path}")
         logger.info(f"Using dataset configuration: {yaml_path}")
+        
+        # Check if combined directory is empty or missing data
+        is_combined_empty = any(
+            len(os.listdir(os.path.join(combined_dir, subdir, split))) == 0
+            for subdir in ['images', 'labels']
+            for split in ['train', 'val']
+        )
+
+        if is_combined_empty:
+            logger.info("Combined directory is empty or incomplete. Preparing dataset...")
+            prepare_combined_dataset()
+        else:
+            logger.info("Combined directory exists and contains data. Validating...")
+            try:
+                verify_dataset_structure(combined_dir)
+                validate_dataset_contents(combined_dir)
+                logger.success("✓ Existing dataset validated")
+            except Exception as e:
+                logger.warning(f"Dataset validation failed: {e}")
+                logger.info("Attempting to recreate dataset...")
+                prepare_combined_dataset()
 
         logger.info("Starting training pipeline...")
         monitor_memory()  # Initial state
