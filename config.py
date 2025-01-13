@@ -20,12 +20,12 @@ class TrainingConfig:
         label_smoothing (float): Label smoothing factor
         export_image_size (tuple): Image size for model export
     """
-    num_epochs: int = 65
-    batch_size: int = 8
+    num_epochs: int = 85
+    batch_size: int = 32
     input_size: tuple = (640, 640)
     initial_lr: float = 1e-4
     warmup_epochs: int = 5
-    num_workers: int = 4
+    num_workers: int = 8
     
     # Model parameters
     confidence_threshold: float = 0.4
