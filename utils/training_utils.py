@@ -11,16 +11,23 @@ logger = logging.getLogger(__name__)
 
 def monitor_gpu():
     """Monitor GPU temperature and utilization"""
-    if torch.cuda.is_available():
+    if not torch.cuda.is_available():
+        return
+        
+    try:
         try:
             import pynvml
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            logger.info(f"GPU Temperature: {temp}°C, Utilization: {util.gpu}%")
-        except Exception as e:
-            logger.warning(f"Could not monitor GPU metrics: {e}")
+        except ImportError:
+            logger.warning("pynvml not installed. GPU monitoring will be limited. Install with: pip install nvidia-ml-py")
+            return
+            
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        logger.info(f"GPU Temperature: {temp}°C, Utilization: {util.gpu}%")
+    except Exception as e:
+        logger.warning(f"Could not monitor GPU metrics: {e}")
 
 def verify_checksum(file_path: str, expected_hash: str) -> bool:
     """Verify file checksum"""

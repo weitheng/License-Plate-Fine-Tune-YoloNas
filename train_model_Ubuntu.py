@@ -33,7 +33,7 @@ from utils.training_utils import (
 )
 from utils.dataset_utils import (
     verify_dataset_structure, validate_dataset_contents,
-    validate_final_dataset, validate_dataset_size, handle_license_plate_data
+    validate_dataset_size, handle_license_plate_data
 )
 
 def setup_logging():
