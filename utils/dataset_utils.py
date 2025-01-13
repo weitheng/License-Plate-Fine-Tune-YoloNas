@@ -117,3 +117,35 @@ def handle_license_plate_data(combined_dir: str, dataset_stats: Dict) -> None:
     except Exception as e:
         logger.error(f"Error handling license plate data: {e}")
         raise
+
+def log_dataset_statistics(dataset_stats: Dict[str, Dict[str, int]]) -> None:
+    """
+    Log detailed statistics about the dataset.
+    
+    Args:
+        dataset_stats: Dictionary containing dataset statistics
+    """
+    logger.info("\n=== Dataset Statistics ===")
+    
+    # Log training set statistics
+    logger.info("Training Set:")
+    logger.info(f"  - COCO Images: {dataset_stats['train']['coco']}")
+    logger.info(f"  - License Plate Images: {dataset_stats['train']['license_plate']}")
+    logger.info(f"  - Total Training Images: {dataset_stats['train']['total']}")
+    
+    # Log validation set statistics
+    logger.info("\nValidation Set:")
+    logger.info(f"  - COCO Images: {dataset_stats['val']['coco']}")
+    logger.info(f"  - License Plate Images: {dataset_stats['val']['license_plate']}")
+    logger.info(f"  - Total Validation Images: {dataset_stats['val']['total']}")
+    
+    # Log total statistics
+    total_images = dataset_stats['train']['total'] + dataset_stats['val']['total']
+    total_coco = dataset_stats['train']['coco'] + dataset_stats['val']['coco']
+    total_lp = dataset_stats['train']['license_plate'] + dataset_stats['val']['license_plate']
+    
+    logger.info("\nTotal Dataset:")
+    logger.info(f"  - Total COCO Images: {total_coco}")
+    logger.info(f"  - Total License Plate Images: {total_lp}")
+    logger.info(f"  - Total Images: {total_images}")
+    logger.info("========================")
