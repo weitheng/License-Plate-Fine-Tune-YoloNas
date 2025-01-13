@@ -27,6 +27,14 @@ from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
+from utils.training_utils import (
+    monitor_gpu, verify_checksum, validate_path_is_absolute,
+    validate_training_config, log_environment_info
+)
+from utils.dataset_utils import (
+    verify_dataset_structure, validate_dataset_contents,
+    validate_final_dataset, validate_dataset_size, handle_license_plate_data
+)
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
@@ -879,31 +887,6 @@ def validate_dataset(data_dir: str) -> None:
         if len(os.listdir(path)) == 0:
             raise RuntimeError(f"Directory is empty: {path}")
 
-def validate_dataset_contents(data_dir: str) -> None:
-    """Validate dataset contents and format"""
-    for split in ['train', 'val']:
-        images_dir = os.path.join(data_dir, f'images/{split}')
-        labels_dir = os.path.join(data_dir, f'labels/{split}')
-        
-        # Check image-label pairs
-        image_files = set(f.split('.')[0] for f in os.listdir(images_dir))
-        label_files = set(f.split('.')[0] for f in os.listdir(labels_dir))
-        
-        # Check dataset size
-        if len(image_files) == 0:
-            raise RuntimeError(f"No images found in {split} split")
-            
-        logger.info(f"Found {len(image_files)} images and {len(label_files)} labels in {split} split")
-        
-        # Check for missing files
-        missing_labels = image_files - label_files
-        missing_images = label_files - image_files
-        
-        if missing_labels:
-            logger.warning(f"Images without labels in {split}: {missing_labels}")
-        if missing_images:
-            logger.warning(f"Labels without images in {split}: {missing_images}")
-
 def cleanup_downloads():
     """Clean up downloaded files after processing"""
     try:
@@ -991,75 +974,6 @@ def monitor_gpu():
             logger.info(f"GPU Temperature: {temp}°C, Utilization: {util.gpu}%")
         except Exception as e:
             logger.warning(f"Could not monitor GPU metrics: {e}")
-
-def verify_checksum(file_path: str, expected_hash: str) -> bool:
-    """Verify file checksum"""
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest() == expected_hash
-
-def validate_path_is_absolute(path: str, description: str) -> None:
-    """Validate that a path is absolute and exists"""
-    if not os.path.isabs(path):
-        raise ValueError(f"{description} must be an absolute path. Got: {path}")
-    directory = os.path.dirname(path)
-    if not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
-    if not os.access(directory, os.W_OK):
-        raise PermissionError(f"No write permission for {description} directory: {directory}")
-
-def verify_dataset_structure(data_dir: str) -> bool:
-    """Verify dataset structure and return True if populated, False if empty/incomplete"""
-    required_dirs = ['images/train', 'images/val', 'labels/train', 'labels/val']
-    
-    # First ensure directories exist
-    for dir_path in required_dirs:
-        full_path = os.path.join(data_dir, dir_path)
-        if not os.path.exists(full_path):
-            os.makedirs(full_path, exist_ok=True)
-            logger.info(f"Created directory: {full_path}")
-            return False
-            
-    # Check if directories have content
-    for dir_path in required_dirs:
-        full_path = os.path.join(data_dir, dir_path)
-        if not os.listdir(full_path):
-            logger.info(f"Directory is empty: {full_path}")
-            return False
-            
-    return True
-
-def validate_training_config(train_params: dict) -> None:
-    """Validate training configuration parameters"""
-    required_keys = ['resume', 'resume_strict_load', 'load_opt_params', 
-                    'load_ema_as_net', 'resume_epoch', 'loss', 'metric_to_watch',
-                    'valid_metrics_list', 'max_epochs', 'initial_lr']
-    for key in required_keys:
-        if key not in train_params:
-            raise ValueError(f"Missing required training parameter: {key}")
-            
-    # Validate numeric parameters
-    if train_params['initial_lr'] <= 0:
-        raise ValueError("Learning rate must be positive")
-    if train_params['max_epochs'] <= 0:
-        raise ValueError("Number of epochs must be positive")
-
-def log_environment_info():
-    """Log environment and library versions"""
-    import sys
-    import super_gradients
-    
-    logger.info("=== Environment Information ===")
-    logger.info(f"Python version: {sys.version}")
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"CUDA available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        logger.info(f"CUDA version: {torch.version.cuda}")
-        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-    logger.info(f"SuperGradients version: {super_gradients.__version__}")
-    logger.info("===========================")
 
 def validate_image_paths(data_dir: str) -> None:
     """Validate that all image files referenced in labels exist"""
