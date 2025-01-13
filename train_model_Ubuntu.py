@@ -557,10 +557,12 @@ def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> D
     EXPECTED_LP_VAL = 1073
     EXPECTED_COCO_TRAIN = 70000
     EXPECTED_COCO_VAL = 5000
+    EXPECTED_TOTAL_TRAIN = EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN
+    EXPECTED_TOTAL_VAL = EXPECTED_COCO_VAL + EXPECTED_LP_VAL
     
     stats = {
-        'train': {'coco': 0, 'license_plate': 0, 'total': 0},
-        'val': {'coco': 0, 'license_plate': 0, 'total': 0}
+        'train': {'total': 0},
+        'val': {'total': 0}
     }
     
     for split in ['train', 'val']:
@@ -570,68 +572,42 @@ def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> D
         if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
             raise RuntimeError(f"Missing directory: {images_dir} or {labels_dir}")
             
-        # Count files
-        image_files = os.listdir(images_dir)
-        label_files = os.listdir(labels_dir)
+        # Count total files
+        image_files = [f for f in os.listdir(images_dir) 
+                      if f.endswith(('.jpg', '.jpeg', '.png'))]
+        label_files = [f for f in os.listdir(labels_dir) 
+                      if f.endswith('.txt')]
         
-        if skip_lp_checks:
-            # When skipping LP checks, count all files and set expected LP counts
-            total_images = len([f for f in image_files if f.endswith(('.jpg', '.jpeg', '.png'))])
-            total_labels = len([f for f in label_files if f.endswith('.txt')])
-            
-            if total_images != total_labels:
-                raise RuntimeError(f"Mismatch in total files for {split}: {total_images} images vs {total_labels} labels")
-            
-            # Set the expected counts when skipping checks
-            if split == 'train':
-                stats[split]['license_plate'] = EXPECTED_LP_TRAIN
-                stats[split]['coco'] = EXPECTED_COCO_TRAIN
-                stats[split]['total'] = EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN
-            else:  # val split
-                stats[split]['license_plate'] = EXPECTED_LP_VAL
-                stats[split]['coco'] = EXPECTED_COCO_VAL
-                stats[split]['total'] = EXPECTED_COCO_VAL + EXPECTED_LP_VAL
-            
-            logger.info(f"{split} split statistics (LP checks skipped):")
-            logger.info(f"  - COCO Images (expected): {stats[split]['coco']}")
-            logger.info(f"  - License Plate Images (expected): {stats[split]['license_plate']}")
-            logger.info(f"  - Total Images (expected): {stats[split]['total']}")
-            
-            # Verify total matches expected
-            expected_total = (EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN if split == 'train' 
-                            else EXPECTED_COCO_VAL + EXPECTED_LP_VAL)
+        total_images = len(image_files)
+        total_labels = len(label_files)
+        
+        if total_images != total_labels:
+            raise RuntimeError(f"Mismatch in total files for {split}: {total_images} images vs {total_labels} labels")
+        
+        stats[split]['total'] = total_images
+        
+        # Validate total counts
+        expected_total = EXPECTED_TOTAL_TRAIN if split == 'train' else EXPECTED_TOTAL_VAL
+        
+        # Only do strict validation if not skipping checks
+        if not skip_lp_checks:
             if total_images != expected_total:
-                logger.warning(f"Total images in {split} ({total_images}) doesn't match expected count ({expected_total})")
-            
-            continue
-            
-        # Count license plate files (prefixed with 'lp_')
-        lp_images = len([f for f in image_files if f.startswith('lp_')])
-        lp_labels = len([f for f in label_files if f.startswith('lp_')])
-        
-        if lp_images != lp_labels:
-            raise RuntimeError(f"Mismatch in license plate files for {split}: {lp_images} images vs {lp_labels} labels")
-            
-        # Count COCO files (not prefixed with 'lp_')
-        coco_images = len([f for f in image_files if not f.startswith('lp_')])
-        coco_labels = len([f for f in label_files if not f.startswith('lp_')])
-        
-        if coco_images != coco_labels:
-            raise RuntimeError(f"Mismatch in COCO files for {split}: {coco_images} images vs {coco_labels} labels")
-            
-        # Update statistics
-        stats[split]['coco'] = coco_images
-        stats[split]['license_plate'] = lp_images
-        stats[split]['total'] = coco_images + lp_images
-        
-        # Verify expected counts only if not skipping LP checks
-        if split == 'train' and coco_images != 70000:
-            logger.warning(f"Unexpected number of COCO training images: {coco_images} (expected 70000)")
+                raise RuntimeError(
+                    f"Incorrect number of images in {split} split. "
+                    f"Found {total_images}, expected {expected_total}"
+                )
+        else:
+            # When skipping checks, just verify we have enough images
+            if total_images < expected_total:
+                raise RuntimeError(
+                    f"Insufficient images in {split} split. "
+                    f"Found {total_images}, need at least {expected_total}"
+                )
         
         logger.info(f"{split} split statistics:")
-        logger.info(f"  - COCO: {coco_images} images")
-        logger.info(f"  - License Plate: {lp_images} images")
-        logger.info(f"  - Total: {coco_images + lp_images} images")
+        logger.info(f"  - Total Images: {total_images}")
+        if not skip_lp_checks:
+            logger.info(f"  - Expected Total: {expected_total}")
     
     logger.success("✓ Dataset validation complete")
     return stats
@@ -1162,29 +1138,17 @@ def main():
         
         # Only check and remove LP prefix if not skipping LP checks
         if not args.skip_lp_checks:
-            # If no license plate images, try preparing dataset again
-            if (dataset_stats['train']['license_plate'] == 0 or 
-                dataset_stats['val']['license_plate'] == 0):
-                logger.warning("No license plate images found in combined dataset. Attempting to recreate...")
-                prepare_combined_dataset()  # Try preparing dataset again
-                
-                # Remove 'lp_' prefix from files
-                logger.info("Removing 'lp_' prefix from files...")
-                remove_lp_prefix(combined_dir)
-                
-                # Validate dataset again after prefix removal
-                dataset_stats = validate_final_dataset(combined_dir, args.skip_lp_checks)
+            logger.info("Removing 'lp_' prefix from files...")
+            remove_lp_prefix(combined_dir)
+            
+            # After prefix removal, validate with skip_lp_checks=True to only check totals
+            logger.info("Validating dataset after prefix removal...")
+            dataset_stats = validate_final_dataset(combined_dir, skip_lp_checks=True)
         
-        # Log detailed dataset statistics
+        # Log dataset statistics
         logger.info("\n=== Final Dataset Statistics ===")
-        logger.info("Training Set:")
-        logger.info(f"  - COCO Images: {dataset_stats['train']['coco']}")
-        logger.info(f"  - License Plate Images: {dataset_stats['train']['license_plate']}")
-        logger.info(f"  - Total Training Images: {dataset_stats['train']['total']}")
-        logger.info("\nValidation Set:")
-        logger.info(f"  - COCO Images: {dataset_stats['val']['coco']}")
-        logger.info(f"  - License Plate Images: {dataset_stats['val']['license_plate']}")
-        logger.info(f"  - Total Validation Images: {dataset_stats['val']['total']}")
+        logger.info(f"Total Training Images: {dataset_stats['train']['total']}")
+        logger.info(f"Total Validation Images: {dataset_stats['val']['total']}")
         logger.info("==============================\n")
 
         # Only proceed with training if validation passes
