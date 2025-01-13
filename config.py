@@ -23,7 +23,7 @@ class TrainingConfig:
     num_epochs: int = 85
     batch_size: int = 32
     input_size: tuple = (640, 640)
-    initial_lr: float = 1e-4
+    initial_lr: float = 3e-4 #from 1e-4
     warmup_epochs: int = 5
     num_workers: int = 8
     
@@ -33,9 +33,9 @@ class TrainingConfig:
     max_predictions: int = 200
     
     # Training parameters
-    early_stopping_patience: int = 5
+    early_stopping_patience: int = 7 #from 5
     weight_decay: float = 0.001
-    dropout: float = 0.1
+    dropout: float = 0.2 #from 0.1
     label_smoothing: float = 0.1
     
     # Export parameters
