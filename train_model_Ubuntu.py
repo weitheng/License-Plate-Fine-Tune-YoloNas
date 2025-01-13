@@ -1184,10 +1184,16 @@ def main():
             if dataset_stats['train']['total'] < 70000:  # Minimum expected total
                 raise RuntimeError(f"Insufficient training images: {dataset_stats['train']['total']}/70000")
         else:
-            if (dataset_stats['train']['coco'] != 70000 or 
-                dataset_stats['train']['license_plate'] == 0 or 
-                dataset_stats['val']['license_plate'] == 0):
-                raise RuntimeError("Dataset validation failed: Incorrect number of images")
+            if dataset_stats['train']['total'] != EXPECTED_TOTAL_TRAIN:
+                raise RuntimeError(
+                    f"Incorrect number of training images: {dataset_stats['train']['total']}, "
+                    f"expected {EXPECTED_TOTAL_TRAIN}"
+                )
+            if dataset_stats['val']['total'] != EXPECTED_TOTAL_VAL:
+                raise RuntimeError(
+                    f"Incorrect number of validation images: {dataset_stats['val']['total']}, "
+                    f"expected {EXPECTED_TOTAL_VAL}"
+                )
 
         # Initialize wandb and start training
         try:
