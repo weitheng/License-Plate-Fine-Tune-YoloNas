@@ -1010,15 +1010,26 @@ def validate_path_is_absolute(path: str, description: str) -> None:
     if not os.access(directory, os.W_OK):
         raise PermissionError(f"No write permission for {description} directory: {directory}")
 
-def verify_dataset_structure(data_dir: str) -> None:
-    """Verify complete dataset structure before training"""
+def verify_dataset_structure(data_dir: str) -> bool:
+    """Verify dataset structure and return True if populated, False if empty/incomplete"""
     required_dirs = ['images/train', 'images/val', 'labels/train', 'labels/val']
+    
+    # First ensure directories exist
     for dir_path in required_dirs:
         full_path = os.path.join(data_dir, dir_path)
         if not os.path.exists(full_path):
-            raise RuntimeError(f"Missing required directory: {full_path}")
+            os.makedirs(full_path, exist_ok=True)
+            logger.info(f"Created directory: {full_path}")
+            return False
+            
+    # Check if directories have content
+    for dir_path in required_dirs:
+        full_path = os.path.join(data_dir, dir_path)
         if not os.listdir(full_path):
-            raise RuntimeError(f"Empty directory: {full_path}")
+            logger.info(f"Directory is empty: {full_path}")
+            return False
+            
+    return True
 
 def validate_training_config(train_params: dict) -> None:
     """Validate training configuration parameters"""
@@ -1190,7 +1201,23 @@ def main():
         try:
             # Dataset preparation and validation
             logger.info("Verifying dataset structure...")
-            verify_dataset_structure(combined_dir)
+            if not verify_dataset_structure(combined_dir):
+                logger.info("Dataset structure incomplete or empty - proceeding with dataset preparation")
+                # Prepare COCO dataset
+                if not check_coco_dataset(coco_dir):
+                    logger.info("Downloading COCO dataset...")
+                    if not download_coco_subset('./data'):
+                        raise RuntimeError("Failed to download COCO dataset")
+                    
+                    if not validate_coco_structure(coco_dir, num_images=70000):
+                        diagnose_coco_dataset(coco_dir)
+                        raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
+                
+                # Convert COCO to YOLO format
+                logger.info("Converting COCO to YOLO format...")
+                convert_coco_to_yolo(coco_dir, combined_dir)
+                
+            # Validate dataset contents after preparation
             validate_dataset_contents(combined_dir)
             logger.info("✓ Dataset validation complete")
             monitor_memory()
