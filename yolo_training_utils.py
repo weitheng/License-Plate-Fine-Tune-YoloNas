@@ -40,7 +40,7 @@ def assess_hardware_capabilities() -> Dict[str, int]:
                 recommended_batch_size = 8
             elif gpu_memory < 16:
                 recommended_batch_size = 16
-            elif gpu_memory < 24:
+            elif gpu_memory < 23:
                 recommended_batch_size = 24
             else:
                 recommended_batch_size = 32
