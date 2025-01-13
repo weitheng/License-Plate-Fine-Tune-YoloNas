@@ -536,13 +536,17 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent('''
             Example usage:
-              %(prog)s  # Normal run with all checks
+              %(prog)s  # Normal run with checkpoint resuming
               %(prog)s --skip-lp-checks  # Skip license plate checks if already processed
+              %(prog)s --no-resume  # Start training from scratch
+              %(prog)s --skip-lp-checks --no-resume  # Skip checks and start fresh
             
             Note: Use --skip-lp-checks only if you have already run remove_prefix.py
             '''))
     parser.add_argument('--skip-lp-checks', action='store_true',
                        help='Skip license plate dataset checks and prefix removal (use if already processed)')
+    parser.add_argument('--no-resume', action='store_true',
+                       help='Start training from scratch instead of resuming from checkpoint')
     return parser.parse_args()
 
 def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> Dict[str, Dict[str, int]]:
@@ -899,17 +903,22 @@ def monitor_memory():
     memory_gb = process.memory_info().rss / 1024 / 1024 / 1024
     logger.info(f"Current memory usage: {memory_gb:.2f} GB")
 
-def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict) -> dict:
+def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict, force_new: bool = False) -> dict:
     """
     Setup checkpoint resuming logic with proper validation.
     
     Args:
         checkpoint_dir: Directory containing checkpoints
         train_params: Current training parameters
+        force_new: If True, ignore existing checkpoints and start fresh
         
     Returns:
         Updated training parameters dict
     """
+    if force_new:
+        logger.info("Starting fresh training as requested (--no-resume)")
+        return {**train_params, 'resume': False, 'resume_path': None}
+
     # First find the experiment directory (most recent RUN_* directory)
     experiment_name = 'coco_license_plate_detection'  # Must match Trainer's experiment_name
     exp_dir = os.path.join(checkpoint_dir, experiment_name)
@@ -1486,7 +1495,7 @@ def main():
         # Initialize training parameters with checkpoint handling
         try:
             logger.info("Checking for existing checkpoints...")
-            train_params = setup_checkpoint_resuming(checkpoint_dir, train_params)
+            train_params = setup_checkpoint_resuming(checkpoint_dir, train_params, force_new=args.no_resume)
         except Exception as e:
             logger.error(f"Error setting up checkpoint resuming: {e}")
             logger.warning("Starting training from scratch")
