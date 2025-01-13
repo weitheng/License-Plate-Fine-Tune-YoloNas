@@ -1323,8 +1323,8 @@ def main():
                 'input_dim': config.input_size,
             },
             dataloader_params={
-                'batch_size': config.batch_size,
-                'num_workers': config.num_workers,
+                'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
+                'num_workers': hw_params['num_workers'],  # Use hardware-assessed workers config.num_workers,
                 'shuffle': True,
                 'pin_memory': torch.cuda.is_available(),
                 'drop_last': True
@@ -1340,8 +1340,8 @@ def main():
                 'input_dim': config.input_size,
             },
             dataloader_params={
-                'batch_size': config.batch_size,
-                'num_workers': config.num_workers,
+                'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
+                'num_workers': hw_params['num_workers'],  # Use hardware-assessed workers config.num_workers,
                 'shuffle': False,
                 'pin_memory': torch.cuda.is_available(),
                 'drop_last': False

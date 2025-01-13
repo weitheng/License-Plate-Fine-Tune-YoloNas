@@ -16,31 +16,53 @@ def assess_hardware_capabilities() -> Dict[str, int]:
         Dict containing recommended num_workers and batch_size based on hardware
     """
     try:
-        # Get CPU cores (physical cores * 0.5 for conservative performance)
+        # Get CPU cores (physical cores * 0.25 for conservative performance)
         cpu_cores = multiprocessing.cpu_count()
         recommended_workers = max(1, int(cpu_cores * 0.25))
 
         # Get available GPU memory
         if torch.cuda.is_available():
             gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
-
+            
             # Calculate batch size based on GPU memory
-            # Rough estimation: 1GB can handle batch size of 4 for YOLO-NAS S
-            recommended_batch_size = max(1, int((gpu_memory - 3) * 4))  # Reserve 3GB for system
-            recommended_batch_size = min(recommended_batch_size, 32)  # Cap at 32 for safety
+            # Conservative estimation:
+            # < 6GB: batch_size = 2
+            # 6-8GB: batch_size = 4
+            # 8-12GB: batch_size = 8
+            # 12-16GB: batch_size = 16
+            # 16-24GB: batch_size = 24
+            # >24GB: batch_size = 32
+            if gpu_memory < 6:
+                recommended_batch_size = 2
+            elif gpu_memory < 8:
+                recommended_batch_size = 4
+            elif gpu_memory < 12:
+                recommended_batch_size = 8
+            elif gpu_memory < 16:
+                recommended_batch_size = 16
+            elif gpu_memory < 24:
+                recommended_batch_size = 24
+            else:
+                recommended_batch_size = 32
+                
+            # Log GPU information
+            logger.info(f"GPU Memory: {gpu_memory:.1f}GB")
+            logger.info(f"Recommended batch size: {recommended_batch_size}")
         else:
-            recommended_batch_size = 4  # Conservative default for CPU
+            recommended_batch_size = 2  # Conservative default for CPU
+            logger.warning("No GPU detected - using minimal batch size")
 
         # Get available RAM
         available_ram = psutil.virtual_memory().available / 1024**3  # Convert to GB
-
-        # Adjust workers based on available RAM (each worker needs ~1.5GB)
-        max_workers_ram = max(1, int(available_ram / 1.5))
+        
+        # Adjust workers based on available RAM (each worker needs ~2GB)
+        max_workers_ram = max(1, int(available_ram / 2))
         recommended_workers = min(recommended_workers, max_workers_ram)
 
-        # Ensure minimum resources are always allocated
-        recommended_workers = max(1, recommended_workers)
-        recommended_batch_size = max(1, recommended_batch_size)
+        # Log final recommendations
+        logger.info(f"Available RAM: {available_ram:.1f}GB")
+        logger.info(f"CPU cores: {cpu_cores}")
+        logger.info(f"Recommended workers: {recommended_workers}")
         
         return {
             'num_workers': recommended_workers,
