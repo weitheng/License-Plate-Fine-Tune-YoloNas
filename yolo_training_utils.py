@@ -406,33 +406,33 @@ def validate_system_requirements() -> None:
         logger.error(f"System requirements validation failed: {e}")
         raise
 
-# def verify_dependencies() -> None:
-#     """Verify all required dependencies are installed with correct versions"""
-#     try:
-#         required_packages = {
-#             'torch': '2.0.0',
-#             'super_gradients': '3.1.0',
-#             'wandb': '0.12.0',
-#             'yaml': '5.1',
-#             'coloredlogs': '15.0',
-#             'psutil': '5.8.0'
-#         }
+def verify_dependencies() -> None:
+    """Verify all required dependencies are installed with correct versions"""
+    try:
+        required_packages = {
+            'torch': '2.0.0',
+            'super_gradients': '3.1.0',
+            'wandb': '0.12.0',
+            'pyyaml': '5.1',
+            'coloredlogs': '15.0',
+            'psutil': '5.8.0'
+        }
         
-#         import pkg_resources
+        import pkg_resources
         
-#         for package, min_version in required_packages.items():
-#             try:
-#                 installed = pkg_resources.get_distribution(package)
-#                 if pkg_resources.parse_version(installed.version) < pkg_resources.parse_version(min_version):
-#                     logger.warning(f"{package} version {installed.version} is older than recommended {min_version}")
-#             except pkg_resources.DistributionNotFound:
-#                 raise RuntimeError(f"Required package {package} is not installed")
+        for package, min_version in required_packages.items():
+            try:
+                installed = pkg_resources.get_distribution(package)
+                if pkg_resources.parse_version(installed.version) < pkg_resources.parse_version(min_version):
+                    logger.warning(f"{package} version {installed.version} is older than recommended {min_version}")
+            except pkg_resources.DistributionNotFound:
+                raise RuntimeError(f"Required package {package} is not installed")
                 
-#         logger.success("✓ All dependencies verified")
+        logger.success("✓ All dependencies verified")
         
-#     except Exception as e:
-#         logger.error(f"Dependency verification failed: {e}")
-#         raise
+    except Exception as e:
+        logger.error(f"Dependency verification failed: {e}")
+        raise
 
 def cleanup_temp_files(directory: str) -> None:
     """
