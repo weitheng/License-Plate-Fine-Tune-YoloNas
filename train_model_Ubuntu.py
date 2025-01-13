@@ -1153,8 +1153,15 @@ def main():
             
             # Initialize training components
             try:
-                # Initialize wandb
-                setup_wandb()
+                # Initialize wandb and start training
+                try:
+                    logger.info("Initializing Weights & Biases...")
+                    wandb.login()
+                    wandb.init(project="license-plate-detection", name="yolo-nas-s-coco-finetuning")
+                    logger.info("✓ Weights & Biases initialized")
+                except Exception as e:
+                    logger.error(f"Failed to initialize wandb: {e}")
+                    raise
                 
                 # Load configurations
                 dataset_config = load_dataset_config(yaml_path)
