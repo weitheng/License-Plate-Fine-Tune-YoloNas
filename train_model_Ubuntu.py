@@ -984,8 +984,14 @@ def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict) -> dict:
     
     return train_params
     
-def verify_checkpoint(checkpoint_path: str) -> bool:
-    """Verify checkpoint file is valid and contains required data"""
+def verify_checkpoint(checkpoint_path: str, is_model_weights: bool = False) -> bool:
+    """
+    Verify checkpoint file is valid and contains required data
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        is_model_weights: If True, validates as model weights file instead of training checkpoint
+    """
     try:
         if not os.path.exists(checkpoint_path):
             return False
@@ -998,18 +1004,25 @@ def verify_checkpoint(checkpoint_path: str) -> bool:
         # Try loading the checkpoint
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         
-        # Check for required keys
-        required_keys = ['net', 'epoch', 'optimizer_state_dict']
-        if not all(key in checkpoint for key in required_keys):
-            logger.warning(f"Checkpoint missing required keys: {checkpoint_path}")
-            return False
-            
-        # Verify model state dict
-        if not isinstance(checkpoint['net'], dict):
-            logger.warning("Invalid model state dict in checkpoint")
-            return False
-            
-        return True
+        if is_model_weights:
+            # For model weights, just verify it's a valid state dict
+            if not isinstance(checkpoint, dict):
+                logger.warning(f"Invalid model weights format in {checkpoint_path}")
+                return False
+            return True
+        else:
+            # For training checkpoints, check for required keys
+            required_keys = ['net', 'epoch', 'optimizer_state_dict']
+            if not all(key in checkpoint for key in required_keys):
+                logger.warning(f"Checkpoint missing required keys: {checkpoint_path}")
+                return False
+                
+            # Verify model state dict
+            if not isinstance(checkpoint['net'], dict):
+                logger.warning("Invalid model state dict in checkpoint")
+                return False
+                
+            return True
     except Exception as e:
         logger.error(f"Error verifying checkpoint {checkpoint_path}: {e}")
         return False
@@ -1022,9 +1035,16 @@ def validate_training_prerequisites(combined_dir: str, checkpoint_dir: str, expo
     if not os.path.exists(combined_dir):
         raise RuntimeError(f"Dataset directory not found: {combined_dir}")
     
-    # Validate model weights
-    if not verify_checkpoint(l_model_path) or not verify_checkpoint(s_model_path):
-        raise RuntimeError("Model weights validation failed")
+    # Validate model weights with is_model_weights=True
+    if not verify_checkpoint(l_model_path, is_model_weights=True):
+        logger.warning(f"YOLO-NAS-L weights not found or invalid, attempting to download...")
+        if not download_model_weights('YOLO_NAS_L', l_model_path):
+            raise RuntimeError("Failed to obtain valid YOLO-NAS-L weights")
+            
+    if not verify_checkpoint(s_model_path, is_model_weights=True):
+        logger.warning(f"YOLO-NAS-S weights not found or invalid, attempting to download...")
+        if not download_model_weights('YOLO_NAS_S', s_model_path):
+            raise RuntimeError("Failed to obtain valid YOLO-NAS-S weights")
     
     # Check write permissions
     for dir_path in [checkpoint_dir, export_dir]:
