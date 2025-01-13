@@ -899,13 +899,119 @@ def monitor_memory():
     memory_gb = process.memory_info().rss / 1024 / 1024 / 1024
     logger.info(f"Current memory usage: {memory_gb:.2f} GB")
 
-def verify_checkpoint(checkpoint_path: str) -> bool:
-    """Verify checkpoint file is valid"""
+def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict) -> dict:
+    """
+    Setup checkpoint resuming logic with proper validation.
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoints
+        train_params: Current training parameters
+        
+    Returns:
+        Updated training parameters dict
+    """
+    # First find the experiment directory (most recent RUN_* directory)
+    experiment_name = 'coco_license_plate_detection'  # Must match Trainer's experiment_name
+    exp_dir = os.path.join(checkpoint_dir, experiment_name)
+    
+    if not os.path.exists(exp_dir):
+        logger.info(f"No experiment directory found at {exp_dir}")
+        return train_params
+        
+    # Find the most recent RUN directory
+    run_dirs = [d for d in os.listdir(exp_dir) if d.startswith('RUN_')]
+    if not run_dirs:
+        logger.info("No previous run directories found")
+        return train_params
+        
+    # Sort by timestamp (newest first)
+    run_dirs.sort(reverse=True)
+    latest_run = os.path.join(exp_dir, run_dirs[0])
+    
+    # Look for checkpoints in the run directory
+    checkpoint_path = os.path.join(latest_run, 'ckpt_latest.pth')
+    best_checkpoint_path = os.path.join(latest_run, 'ckpt_best.pth')
+    
+    # Check for both latest and best checkpoints
+    available_checkpoints = {
+        'latest': checkpoint_path if os.path.exists(checkpoint_path) else None,
+        'best': best_checkpoint_path if os.path.exists(best_checkpoint_path) else None
+    }
+    
+    if not any(available_checkpoints.values()):
+        logger.info(f"No checkpoints found in latest run directory: {latest_run}")
+        return train_params
+        
+    # Verify checkpoint files
+    valid_checkpoints = {}
+    for name, path in available_checkpoints.items():
+        if path and verify_checkpoint(path):
+            valid_checkpoints[name] = path
+            logger.info(f"Found valid {name} checkpoint: {path}")
+    
+    if not valid_checkpoints:
+        logger.warning("Found checkpoint files but they are invalid - starting from scratch")
+        return train_params
+        
+    # Prefer best checkpoint over latest if both exist
+    chosen_checkpoint = valid_checkpoints.get('best', valid_checkpoints.get('latest'))
+    
+    # Update training parameters for resuming
+    train_params.update({
+        'resume': True,
+        'resume_path': chosen_checkpoint,
+        'resume_strict_load': False,  # Allow flexible loading
+        'load_opt_params': True,      # Load optimizer state
+        'load_ema_as_net': False,     # Don't load EMA weights as main weights
+        'resume_epoch': True          # Continue from the last epoch
+    })
+    
+    logger.info(f"Will resume training from checkpoint: {chosen_checkpoint}")
+    
+    # Verify checkpoint content
     try:
+        checkpoint = torch.load(chosen_checkpoint, map_location='cpu')
+        expected_keys = ['net', 'epoch', 'optimizer_state_dict']
+        if not all(key in checkpoint for key in expected_keys):
+            logger.warning("Checkpoint missing expected keys - may cause issues")
+        else:
+            logger.info(f"Resuming from epoch {checkpoint['epoch']}")
+            logger.info(f"Found in run directory: {latest_run}")
+    except Exception as e:
+        logger.error(f"Error verifying checkpoint contents: {e}")
+        logger.warning("Starting training from scratch")
+        return {**train_params, 'resume': False}
+    
+    return train_params
+    
+def verify_checkpoint(checkpoint_path: str) -> bool:
+    """Verify checkpoint file is valid and contains required data"""
+    try:
+        if not os.path.exists(checkpoint_path):
+            return False
+            
+        # Check file size
+        if os.path.getsize(checkpoint_path) < 1000:  # Arbitrary minimum size
+            logger.warning(f"Checkpoint file too small: {checkpoint_path}")
+            return False
+            
+        # Try loading the checkpoint
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        
+        # Check for required keys
+        required_keys = ['net', 'epoch', 'optimizer_state_dict']
+        if not all(key in checkpoint for key in required_keys):
+            logger.warning(f"Checkpoint missing required keys: {checkpoint_path}")
+            return False
+            
+        # Verify model state dict
+        if not isinstance(checkpoint['net'], dict):
+            logger.warning("Invalid model state dict in checkpoint")
+            return False
+            
         return True
     except Exception as e:
-        logger.error(f"Invalid checkpoint file: {e}")
+        logger.error(f"Error verifying checkpoint {checkpoint_path}: {e}")
         return False
 
 def validate_training_prerequisites(combined_dir: str, checkpoint_dir: str, export_dir: str, l_model_path: str, s_model_path: str):
@@ -1358,26 +1464,15 @@ def main():
             raise PermissionError(f"No write permission for checkpoint directory: {checkpoint_dir}")
             
         # Initialize training parameters with checkpoint handling
-        if os.path.exists(checkpoint_path) and verify_checkpoint(checkpoint_path):
-            logger.info(f"Found existing checkpoint: {checkpoint_path}")
-            train_params.update({
-                'resume': True,
-                'resume_path': checkpoint_path,
-                'resume_strict_load': False,
-                'load_opt_params': True,    # Load optimizer state
-                'load_ema_as_net': False,   # Don't load EMA weights as main weights
-                'resume_epoch': True        # Continue from the last epoch
-            })
-            logger.info(f"Will resume training from: {checkpoint_path}")
-        else:
-            logger.info("No valid checkpoint found, starting training from scratch")
+        try:
+            logger.info("Checking for existing checkpoints...")
+            train_params = setup_checkpoint_resuming(checkpoint_dir, train_params)
+        except Exception as e:
+            logger.error(f"Error setting up checkpoint resuming: {e}")
+            logger.warning("Starting training from scratch")
             train_params.update({
                 'resume': False,
-                'resume_path': None,
-                'resume_strict_load': False,
-                'load_opt_params': False,
-                'load_ema_as_net': False,
-                'resume_epoch': False
+                'resume_path': None
             })
 
         # Initialize trainer with explicit absolute paths
