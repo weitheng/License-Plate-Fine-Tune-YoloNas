@@ -1133,7 +1133,7 @@ def verify_dataset_structure(data_dir: str) -> None:
 
 def validate_training_config(train_params: dict) -> None:
     """Validate training configuration parameters"""
-    required_keys = ['resume', 'resume_epoch', 'loss', 'metric_to_watch',
+    required_keys = ['resume', 'loss', 'metric_to_watch',
                     'valid_metrics_list', 'max_epochs', 'initial_lr']
     for key in required_keys:
         if key not in train_params:
