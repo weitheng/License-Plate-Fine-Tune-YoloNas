@@ -262,14 +262,24 @@ class AugmentedDetectionDataset(Dataset):
                 image = transformed['image']
                 
             else:
-                transformed = self.transforms(image=image)
+                # When there are no boxes, still pass empty lists
+                transformed = self.transforms(
+                    image=image,
+                    bboxes=[],
+                    class_labels=[]
+                )
                 image = transformed['image']
                 boxes = torch.zeros((0, 4), dtype=torch.float32)
                 class_labels = torch.zeros(0, dtype=torch.long)
-                
+            
         except Exception as e:
             logger.error(f"Error in transformation for {img_path}: {str(e)}")
-            transformed = self.transforms(image=image)
+            # When there's an error, still pass empty lists
+            transformed = self.transforms(
+                image=image,
+                bboxes=[],
+                class_labels=[]
+            )
             image = transformed['image']
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             class_labels = torch.zeros(0, dtype=torch.long)

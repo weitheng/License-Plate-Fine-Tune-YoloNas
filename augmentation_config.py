@@ -77,8 +77,16 @@ def get_training_augmentations(input_size):
     # Add debug wrapper if needed
     if DEBUG_MODE:
         def debug_transform(**kwargs):
+            # Handle case with no boxes
+            if 'bboxes' not in kwargs:
+                kwargs['bboxes'] = []
+            if 'class_labels' not in kwargs:
+                kwargs['class_labels'] = []
+                
             result = transform(**kwargs)
-            if len(kwargs['bboxes']) != len(result['bboxes']):
+            
+            # Only log box changes if there were boxes to begin with
+            if len(kwargs['bboxes']) > 0 and len(kwargs['bboxes']) != len(result['bboxes']):
                 print(f"Warning: Boxes changed from {len(kwargs['bboxes'])} to {len(result['bboxes'])}")
             return result
         return debug_transform
