@@ -1491,9 +1491,7 @@ def main():
             num_classes=81,
             reg_max=16,
             iou_loss_weight=3.0,
-            dfl_loss_weight=1.0,
-            use_dfl=True,
-            iou_type='giou'
+            dfl_loss_weight=1.0
         )
 
         # Get GPU memory if available
