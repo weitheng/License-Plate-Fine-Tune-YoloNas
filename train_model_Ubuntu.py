@@ -1614,7 +1614,7 @@ def main():
 
         # Save final model checkpoint with absolute paths
         final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth'))
-        trainer.save_checkpoint(
+        trainer._save_checkpoint(
             model_state=model.state_dict(),
             optimizer_state=None,
             scheduler_state=None,

@@ -1,21 +1,3 @@
-import cv2
-import numpy as np
-import torch
-from torch.utils.data import Dataset
-import os
-from typing import List, Dict, Any, Tuple
-import logging
-
-DEBUG_MODE = True  # Set to True only when debugging
-
-def verify_bbox_format(boxes: torch.Tensor) -> None:
-    """Verify bounding box format and values"""
-    if len(boxes) > 0:
-        if not torch.all((boxes >= 0) & (boxes <= 1)):
-            invalid_boxes = boxes[~((boxes >= 0) & (boxes <= 1))]
-            logging.warning(f"Invalid box coordinates found: {invalid_boxes}")
-            raise ValueError("Box coordinates must be in [0,1]")
-
 def collate_fn(batch: List[Tuple]) -> Tuple:
     """
     Custom collate function to handle variable-sized tensors and match SuperGradients YOLO format.
@@ -27,65 +9,45 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
         Tuple of (images, targets, metadata)
     """
     if DEBUG_MODE:
-        # Only log batch size and unusual conditions
-        print(f"Processing batch of size: {len(batch)}")
-        
-        # Check for empty or unusually large boxes
+        # Only log critical issues
         for batch_idx, (_, target, _) in enumerate(batch):
             boxes = target['boxes']
-            if len(boxes) == 0:
-                print(f"Warning: Empty boxes in batch {batch_idx}")
-            elif len(boxes) > 20:  # Arbitrary threshold for many boxes
-                print(f"Note: Large number of boxes ({len(boxes)}) in batch {batch_idx}")
-            
-            # Only log problematic boxes
             if len(boxes) > 0:
                 invalid_boxes = boxes[~((boxes >= 0) & (boxes <= 1)).all(dim=1)]
                 if len(invalid_boxes) > 0:
-                    print(f"Warning: Invalid box coordinates in batch {batch_idx}:")
-                    print(invalid_boxes)
+                    print(f"WARNING: Invalid box coordinates in batch {batch_idx}")
     
     images = torch.stack([item[0] for item in batch])
     
-    # Verify image sizes
-    expected_shape = images[0].shape
-    for idx, img in enumerate(images):
-        if img.shape != expected_shape:
-            raise ValueError(f"Inconsistent image size at index {idx}: "
-                           f"got {img.shape}, expected {expected_shape}")
-    
     # Convert targets to SuperGradients YOLO format
-    # Format: [batch_idx, class_id, x, y, w, h]
     all_targets = []
     for batch_idx, (_, target, _) in enumerate(batch):
         boxes = target['boxes']
-        labels = target['labels'].float()  # Ensure float type
+        labels = target['labels'].float()
         
         if len(boxes) > 0:
             verify_bbox_format(boxes)
             batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
-            # Ensure boxes are in correct format
-            if DEBUG_MODE:
-                print(f"Boxes for batch {batch_idx}: {boxes}")
-            # Combine into YOLO format
             target_boxes = torch.cat([batch_col, labels.view(-1, 1), boxes], dim=1)
             all_targets.append(target_boxes)
     
-    # Concatenate all targets if any exist
     if len(all_targets) > 0:
         targets = torch.cat(all_targets, dim=0)
         assert targets.shape[1] == 6, f"Invalid target shape: {targets.shape}"
     else:
-        # Create empty tensor with correct shape if no targets
-        targets = torch.zeros((0, 6), dtype=torch.float32)  # 6 columns: [batch_idx, class_id, x, y, w, h]
+        targets = torch.zeros((0, 6), dtype=torch.float32)
     
-    # Metadata dict for any additional info
     metadata = {
         'image_paths': [item[2]['image_path'] for item in batch]
     }
     
     return images, targets, metadata
 
+class AugmentedDetectionDataset(Dataset):
+    def __getitem__(self, idx):
+        img_path = self.image_paths[idx]
+        img_name = os.path.basename(img_path)
+        
 def clip_bbox(bbox):
     """
     Clip bounding box coordinates to be within [0, 1] and validate dimensions.
@@ -93,20 +55,26 @@ def clip_bbox(bbox):
     """
     x_center, y_center, width, height = bbox
     
+    # If any value is NaN or infinite, reject the box
+    if not all(map(lambda x: isinstance(x, (int, float)) and -float('inf') < x < float('inf'), bbox)):
+        return None
+        
     # Clip centers to [0, 1]
     x_center = np.clip(x_center, 0.0, 1.0)
     y_center = np.clip(y_center, 0.0, 1.0)
     
-    # Ensure box stays within image bounds
-    width = min(width, 2 * min(x_center, 1 - x_center))
-    height = min(height, 2 * min(y_center, 1 - y_center))
+    # Clip width and height to reasonable values
+    width = np.clip(width, 0.0, 1.0)
+    height = np.clip(height, 0.0, 1.0)
     
-    # Validate dimensions
-    if width <= 0 or height <= 0:
+    # Ensure box dimensions are valid
+    if width < 0.001 or height < 0.001 or width > 0.999 or height > 0.999:
         return None
         
-    # Ensure minimum size
-    if width < 0.001 or height < 0.001:
+    # Ensure center coordinates allow box to stay within image
+    if (x_center - width/2) < 0 or (x_center + width/2) > 1:
+        return None
+    if (y_center - height/2) < 0 or (y_center + height/2) > 1:
         return None
     
     return [x_center, y_center, width, height]
@@ -183,9 +151,15 @@ class AugmentedDetectionDataset(Dataset):
                     class_labels=class_labels
                 )
                 
-                # Validate transformed boxes
+                # Additional validation after transformation
+                valid_boxes = []
+                valid_labels = []
+                
                 for box, label in zip(transformed['bboxes'], transformed['class_labels']):
-                    if all(0 <= coord <= 1 for coord in box):
+                    # Strict validation of box coordinates
+                    if (all(0.0 <= coord <= 1.0 for coord in box) and
+                        0.001 < box[2] < 0.999 and  # width
+                        0.001 < box[3] < 0.999):    # height
                         valid_boxes.append(box)
                         valid_labels.append(label)
                 
@@ -195,6 +169,14 @@ class AugmentedDetectionDataset(Dataset):
                 else:
                     boxes = torch.zeros((0, 4), dtype=torch.float32)
                     class_labels = torch.zeros(0, dtype=torch.long)
+                
+                image = transformed['image']
+                
+                # Verify tensor values
+                if torch.isnan(boxes).any() or torch.isinf(boxes).any():
+                    boxes = torch.zeros((0, 4), dtype=torch.float32)
+                    class_labels = torch.zeros(0, dtype=torch.long)
+                
             else:
                 # Handle cases with no boxes
                 transformed = self.transforms(
@@ -207,7 +189,7 @@ class AugmentedDetectionDataset(Dataset):
                 class_labels = torch.zeros(0, dtype=torch.long)
                 
         except Exception as e:
-            print(f"Warning: Error applying transforms to {img_path}: {str(e)}")
+            print(f"Warning: Error in transformation for {img_path}: {str(e)}")
             # Fallback to basic transformation
             transformed = self.transforms(
                 image=image,
@@ -217,8 +199,6 @@ class AugmentedDetectionDataset(Dataset):
             image = transformed['image']
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             class_labels = torch.zeros(0, dtype=torch.long)
-        
-        image = transformed['image']
         
         # Return in SuperGradients expected format
         targets = {
