@@ -150,58 +150,51 @@ def validate_boxes(boxes, labels, image_shape):
     valid_labels = []
     
     img_height, img_width = image_shape[:2]
-    min_size = 2.0 / min(img_height, img_width)  # Minimum 2 pixels
+    # More lenient minimum size (1 pixel)
+    min_size = 1.0 / min(img_height, img_width)
     
     for box, label in zip(boxes, labels):
         # Unpack box coordinates
         x_center, y_center, width, height = box
         
-        # Strict validation
-        if not all(isinstance(x, (int, float)) for x in box):
-            continue
-            
+        # Basic validation
         if any(np.isnan(box)) or any(np.isinf(box)):
             continue
             
-        # Ensure box dimensions are valid
-        if width <= min_size or height <= min_size:
+        # More lenient size checks
+        if width <= 0 or height <= 0:  # Only filter completely invalid boxes
             continue
             
-        if width >= 1.0 or height >= 1.0:
+        if width > 1.0 or height > 1.0:  # Only filter boxes larger than image
             continue
             
-        # Ensure center is within image
-        if not (0 <= x_center <= 1 and 0 <= y_center <= 1):
-            continue
-            
+        # More lenient center checks
+        x_center = np.clip(x_center, 0, 1)
+        y_center = np.clip(y_center, 0, 1)
+        
         # Calculate box boundaries
         x_min = x_center - width/2
         y_min = y_center - height/2
         x_max = x_center + width/2
         y_max = y_center + height/2
         
-        # Ensure box is within image bounds
+        # Try to fix boxes that are slightly outside
         if x_min < 0 or y_min < 0 or x_max > 1 or y_max > 1:
-            # Try to clip the box
+            # Clip coordinates
             x_min = np.clip(x_min, 0, 1)
             y_min = np.clip(y_min, 0, 1)
             x_max = np.clip(x_max, 0, 1)
             y_max = np.clip(y_max, 0, 1)
             
-            # Recalculate center and dimensions
+            # Recalculate dimensions
             width = x_max - x_min
             height = y_max - y_min
             x_center = x_min + width/2
             y_center = y_min + height/2
             
-            # Skip if box became too small after clipping
-            if width <= min_size or height <= min_size:
+            # Only filter if box became too small after clipping
+            if width <= 0 or height <= 0:
                 continue
-        
-        # Ensure final box coordinates are valid
-        if not (0 <= x_center <= 1 and 0 <= y_center <= 1 and 
-                0 < width < 1 and 0 < height < 1):
-            continue
         
         # Add valid box and label
         valid_boxes.append([x_center, y_center, width, height])
@@ -213,7 +206,7 @@ def validate_boxes(boxes, labels, image_shape):
     valid_boxes = np.array(valid_boxes, dtype=np.float32)
     valid_labels = np.array(valid_labels, dtype=np.int64)
     
-    # Final sanity check on the entire array
+    # Final sanity check
     if np.any(np.isnan(valid_boxes)) or np.any(np.isinf(valid_boxes)):
         return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
     
@@ -230,10 +223,13 @@ class AugmentedDetectionDataset(Dataset):
         self.transforms = transforms
         self.input_size = input_size
         
-        # Adjusted thresholds
-        self.MAX_BOXES_WARNING = 100  # Only warn if more than 100 boxes
-        self.MAX_IMAGE_DIM = 2048    # Only warn if either dimension exceeds 2048
-        self.MIN_BOX_WARNING = 1     # Warn if boxes are smaller than 1% of image
+        # Adjusted thresholds to reduce warnings
+        self.MAX_BOXES_WARNING = 150     # Increased from 100
+        self.MAX_IMAGE_DIM = 4096       # Increased from 2048
+        self.MIN_BOX_WARNING = 0.5      # Reduced from 1
+        
+        # Only warn about significant box losses
+        self.BOX_LOSS_WARNING_THRESHOLD = 10  # Only warn if we lose more than 10 boxes
         
         # Get list of image files
         self.image_files = [f for f in os.listdir(self.images_dir) 
@@ -327,7 +323,7 @@ class AugmentedDetectionDataset(Dataset):
                     class_labels = torch.zeros(0, dtype=torch.long)
                 
                 # Only log significant box count changes
-                if DEBUG_MODE and (original_box_count - len(valid_boxes)) > 5:
+                if DEBUG_MODE and (original_box_count - len(valid_boxes)) > self.BOX_LOSS_WARNING_THRESHOLD:
                     logger.warning(f"Lost {original_box_count - len(valid_boxes)} boxes during processing in {img_path}")
                 
                 image = transformed['image']
