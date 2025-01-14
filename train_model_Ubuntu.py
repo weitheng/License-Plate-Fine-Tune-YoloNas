@@ -27,6 +27,9 @@ from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
+from custom_dataset import AugmentedDetectionDataset
+from augmentation_config import get_training_augmentations, get_validation_augmentations
+from torch.utils.data import DataLoader
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
@@ -1211,6 +1214,68 @@ def validate_image_paths(data_dir: str) -> None:
         
         logger.success(f"✓ All {len(image_files)} images in {split} split are valid and readable")
 
+class CheckpointLoggingCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.VALIDATION_END)
+        self.best_map = 0
+        self.last_ckpt_time = 0
+
+    def __call__(self, context):
+        current_map = context.metrics_dict.get('Map@0.50', 0)
+        
+        if current_map > self.best_map:
+            self.best_map = current_map
+            # Check if checkpoint file was actually updated
+            ckpt_path = os.path.join(context.ckpt_dir, 'ckpt_best.pth')
+            if os.path.exists(ckpt_path):
+                current_time = os.path.getmtime(ckpt_path)
+                if current_time > self.last_ckpt_time:
+                    self.last_ckpt_time = current_time
+                    logger.success(f"✓ New best mAP@0.50: {current_map:.4f} - Checkpoint saved to {ckpt_path}")
+
+def get_dataloaders(combined_dir, dataset_config, hw_params, config):
+    """Initialize dataloaders with augmentations"""
+    # Training dataset with augmentations
+    train_transforms = get_training_augmentations(config.input_size)
+    train_dataset = AugmentedDetectionDataset(
+        data_dir=combined_dir,
+        images_dir='images/train',
+        labels_dir='labels/train',
+        transforms=train_transforms,
+        input_size=config.input_size
+    )
+    
+    # Validation dataset with basic transforms
+    val_transforms = get_validation_augmentations(config.input_size)
+    val_dataset = AugmentedDetectionDataset(
+        data_dir=combined_dir,
+        images_dir='images/val',
+        labels_dir='labels/val',
+        transforms=val_transforms,
+        input_size=config.input_size
+    )
+    
+    # Create dataloaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=hw_params['batch_size'],
+        num_workers=hw_params['num_workers'],
+        shuffle=True,
+        pin_memory=torch.cuda.is_available(),
+        drop_last=True
+    )
+    
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=hw_params['batch_size'],
+        num_workers=hw_params['num_workers'],
+        shuffle=False,
+        pin_memory=torch.cuda.is_available(),
+        drop_last=False
+    )
+    
+    return train_loader, val_loader
+
 def main():
     try:
         # Parse command line arguments
@@ -1443,43 +1508,12 @@ def main():
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
+            'resume_strict_load': False,
             'optimizer_params': {'weight_decay': config.weight_decay}
         }
 
         # Update dataloader params with absolute paths
-        train_data = coco_detection_yolo_format_train(
-            dataset_params={
-                'data_dir': combined_dir,  # Using absolute path to combined dataset
-                'images_dir': 'images/train',
-                'labels_dir': 'labels/train',
-                'classes': dataset_config['names'],
-                'input_dim': config.input_size,
-            },
-            dataloader_params={
-                'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
-                'num_workers': hw_params['num_workers'],  # Use hardware-assessed workers config.num_workers,
-                'shuffle': True,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': True
-            }
-        )
-
-        val_data = coco_detection_yolo_format_val(
-            dataset_params={
-                'data_dir': combined_dir,  # Using absolute path to combined dataset
-                'images_dir': 'images/val',
-                'labels_dir': 'labels/val',
-                'classes': dataset_config['names'],
-                'input_dim': config.input_size,
-            },
-            dataloader_params={
-                'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
-                'num_workers': hw_params['num_workers'],  # Use hardware-assessed workers config.num_workers,
-                'shuffle': False,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': False
-            }
-        )
+        train_data, val_data = get_dataloaders(combined_dir, dataset_config, hw_params, config)
 
         # Check for existing checkpoint
         checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'latest_checkpoint.pth'))
@@ -1505,7 +1539,8 @@ def main():
         # Initialize trainer with explicit absolute paths
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Ensure absolute path
+            ckpt_root_dir=os.path.abspath(checkpoint_dir),
+            phase_callbacks=[CheckpointLoggingCallback()]
         )
 
         # Validate dataset contents before training
