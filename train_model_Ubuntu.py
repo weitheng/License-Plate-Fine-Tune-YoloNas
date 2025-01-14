@@ -1266,6 +1266,25 @@ class ValidationDebugCallback(PhaseCallback):
                 print("\nSample targets:")
                 print(batch_targets[0, :2])  # Show first 2 targets of first image
 
+class LossComponentCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_BATCH_END)
+        self.batch_count = 0
+        
+    def __call__(self, context):
+        self.batch_count += 1
+        if self.batch_count % 100 == 0:  # Log every 100 batches
+            loss_dict = {
+                name: value.item() if torch.is_tensor(value) else value
+                for name, value in zip(context.loss_logging_items_names, context.loss_log_items)
+            }
+            
+            # Check for zero losses
+            zero_losses = [name for name, value in loss_dict.items() if value == 0]
+            if zero_losses:
+                logger.warning(f"Zero values detected in losses: {zero_losses}")
+                logger.info(f"Current loss values: {loss_dict}")
+
 def get_dataloaders(combined_dir, dataset_config, hw_params, config):
     """Initialize dataloaders with augmentations"""
     # Training dataset with augmentations
@@ -1503,16 +1522,15 @@ def main():
             logger.error(f"Failed to initialize model: {e}")
             raise RuntimeError("Model initialization failed") from e
         
-        # Define loss function with simplified weights
+        # Define loss function with correct parameters
         loss_fn = PPYoloELoss(
             num_classes=81,
             reg_max=16,
             use_static_assigner=True,
-            loss_weights={
-                'class': 1.0,
-                'iou': 5.0,
-                'dfl': 2.0
-            }
+            iou_loss_weight=5.0,      # Weight for IoU loss
+            dfl_loss_weight=2.0,      # Weight for DFL loss
+            cls_loss_weight=1.0,      # Weight for classification loss
+            static_assigner_epoch=100  # Use static assigner after this epoch
         )
 
         # Get GPU memory if available
@@ -1589,7 +1607,8 @@ def main():
             'phase_callbacks': [
                 CheckpointLoggingCallback(),
                 LossDebugCallback(),
-                ValidationDebugCallback()
+                ValidationDebugCallback(),
+                LossComponentCallback()
             ]
         }
 
