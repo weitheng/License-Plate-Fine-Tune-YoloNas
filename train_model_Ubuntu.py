@@ -1232,8 +1232,14 @@ class LossDebugCallback(PhaseCallback):
         
     def __call__(self, context):
         if context.batch_idx % 100 == 0:  # Log every 100 batches
-            loss_dict = context.loss_logging_items_dict
             logger.info(f"Batch {context.batch_idx} losses:")
+            # Get loss names and values from the context
+            loss_names = context.loss_logging_items_names
+            loss_values = context.loss_logging_items
+            
+            # Create loss dictionary by zipping names and values
+            loss_dict = dict(zip(loss_names, loss_values))
+            
             for loss_name, loss_value in loss_dict.items():
                 logger.info(f"  {loss_name}: {loss_value:.4f}")
 
