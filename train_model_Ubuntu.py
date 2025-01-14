@@ -1620,11 +1620,11 @@ def main():
             # Use trainer's _save_checkpoint method
             trainer._save_checkpoint(
                 checkpoint_path=final_checkpoint_path,
-                net=model.state_dict(),  # Changed from model_state to net
-                epoch=trainer.epoch,
-                optimizer=trainer.optimizer.state_dict() if trainer.optimizer else None,  # Changed from optimizer_state
-                scheduler=trainer.scheduler.state_dict() if trainer.scheduler else None,  # Changed from scheduler_state
-                scaler=None  # Add scaler parameter
+                net=model.state_dict(),
+                optimizer=trainer.optimizer.state_dict() if trainer.optimizer else None,
+                scheduler=trainer.scheduler.state_dict() if trainer.scheduler else None,
+                scaler=None,
+                epoch=trainer._epoch if hasattr(trainer, '_epoch') else trainer.max_epochs
             )
             logger.success(f"✓ Final checkpoint saved to {final_checkpoint_path}")
         except Exception as e:
