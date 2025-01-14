@@ -24,73 +24,53 @@ def get_training_augmentations(input_size):
             border_mode=cv2.BORDER_CONSTANT,
             value=0
         ),
-        # Then apply other augmentations
-        A.RandomResizedCrop(
-            height=input_size[0],
-            width=input_size[1],
-            scale=(0.8, 1.0),  # Less aggressive scale change
-            ratio=(0.9, 1.1),  # Less aggressive aspect ratio change
-            p=0.5
-        ),
+        # Reduce geometric transformations
+        A.OneOf([
+            A.RandomResizedCrop(
+                height=input_size[0],
+                width=input_size[1],
+                scale=(0.9, 1.0),  # Less aggressive scale
+                ratio=(0.95, 1.05),  # Keep aspect ratio closer to original
+                p=0.7
+            ),
+            A.Resize(
+                height=input_size[0],
+                width=input_size[1],
+                p=0.3
+            )
+        ], p=1.0),
+        
+        # Reduce geometric augmentations
         A.HorizontalFlip(p=0.5),
         A.ShiftScaleRotate(
-            shift_limit=0.05,    # Reduced from 0.1
-            scale_limit=0.05,    # Reduced from 0.1
-            rotate_limit=5,      # Reduced from 12
+            shift_limit=0.0625,    # Reduced from 0.05
+            scale_limit=0.05,      # Reduced from 0.1
+            rotate_limit=5,        # Reduced from 15
             border_mode=cv2.BORDER_CONSTANT,
             value=0,
             p=0.3
         ),
-        # Color adjustments for different lighting conditions
+        
+        # Color adjustments (kept minimal)
         A.OneOf([
             A.RandomBrightnessContrast(
-                brightness_limit=(-0.1, 0.1),  # Reduced from (-0.3, 0.2)
-                contrast_limit=(-0.1, 0.1),    # Reduced from (-0.2, 0.2)
+                brightness_limit=(-0.1, 0.1),
+                contrast_limit=(-0.1, 0.1),
                 p=0.7
             ),
             A.HueSaturationValue(
-                hue_shift_limit=10,            # Reduced from 15
-                sat_shift_limit=15,            # Reduced from (-30, 25)
-                val_shift_limit=10,            # Reduced from (-30, 15)
-                p=0.7
-            ),
-            A.RGBShift(
-                r_shift_limit=10,              # Reduced from 15
-                g_shift_limit=10,
-                b_shift_limit=10,
+                hue_shift_limit=5,
+                sat_shift_limit=10,
+                val_shift_limit=10,
                 p=0.3
             ),
         ], p=0.5),
-        # Weather and lighting effects (kept but made more conservative)
-        A.OneOf([
-            A.RandomShadow(
-                shadow_roi=(0, 0.5, 1, 1),
-                num_shadows_lower=1,
-                num_shadows_upper=2,           # Reduced from 3
-                shadow_dimension=5,
-                p=0.3
-            ),
-            A.RandomFog(
-                fog_coef_lower=0.1,
-                fog_coef_upper=0.2,           # Reduced from 0.3
-                p=0.2
-            ),
-            A.GaussNoise(
-                var_limit=(10.0, 50.0),       # Reduced from (10.0, 80.0)
-                mean=0,
-                p=0.2
-            ),
-        ], p=0.3),
-        # Minimal blur
-        A.OneOf([
-            A.GaussianBlur(blur_limit=(3, 5), p=0.3),  # Reduced blur
-            A.MotionBlur(blur_limit=(3, 5), p=0.3),    # Reduced blur
-        ], p=0.3),
+        
         A.ToFloat(max_value=255.0),
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.4,      # Increased from 0.3
+        min_visibility=0.6,  # Increased from 0.4
         label_fields=['class_labels']
     ))
     
@@ -130,6 +110,6 @@ def get_validation_augmentations(input_size):
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.3,
+        min_visibility=0.6,  # Match training visibility threshold
         label_fields=['class_labels']
     )) 

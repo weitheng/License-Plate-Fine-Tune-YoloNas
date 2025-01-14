@@ -85,11 +85,6 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
     
     return images, targets, metadata
 
-class AugmentedDetectionDataset(Dataset):
-    def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        img_name = os.path.basename(img_path)
-        
 def clip_bbox(bbox):
     """
     Clip bounding box coordinates to be within [0, 1] and validate dimensions.
@@ -121,6 +116,48 @@ def clip_bbox(bbox):
     
     return [x_center, y_center, width, height]
 
+def validate_boxes(boxes, labels, image_shape):
+    """
+    Validate boxes after augmentation.
+    Returns filtered boxes and labels.
+    """
+    if len(boxes) == 0:
+        return boxes, labels
+        
+    valid_boxes = []
+    valid_labels = []
+    
+    img_height, img_width = image_shape[:2]
+    
+    for box, label in zip(boxes, labels):
+        # Unpack box coordinates
+        x_center, y_center, width, height = box
+        
+        # Basic coordinate checks
+        if not (0 <= x_center <= 1 and 0 <= y_center <= 1 and 
+                0 < width <= 1 and 0 < height <= 1):
+            continue
+            
+        # Check if box dimensions are reasonable
+        if width < 0.01 or height < 0.01:  # Minimum 1% of image size
+            continue
+        if width > 0.95 or height > 0.95:  # Maximum 95% of image size
+            continue
+            
+        # Check if box stays within image bounds
+        x_min = x_center - width/2
+        y_min = y_center - height/2
+        x_max = x_center + width/2
+        y_max = y_center + height/2
+        
+        if x_min < 0 or y_min < 0 or x_max > 1 or y_max > 1:
+            continue
+            
+        valid_boxes.append(box)
+        valid_labels.append(label)
+    
+    return np.array(valid_boxes), np.array(valid_labels)
+
 class AugmentedDetectionDataset(Dataset):
     """
     Custom dataset class with Albumentations augmentations support.
@@ -147,10 +184,6 @@ class AugmentedDetectionDataset(Dataset):
             self.labels_dir,
             img_name.rsplit('.', 1)[0] + '.txt'
         )
-        
-        # Debug print
-        print(f"Loading image: {img_path}")
-        print(f"Loading label: {label_path}")
         
         # Read image
         image = cv2.imread(img_path)
@@ -193,56 +226,60 @@ class AugmentedDetectionDataset(Dataset):
                     class_labels=class_labels
                 )
                 
-                # Additional validation after transformation
-                valid_boxes = []
-                valid_labels = []
+                # Store original count for debugging
+                original_box_count = len(boxes)
                 
-                for box, label in zip(transformed['bboxes'], transformed['class_labels']):
-                    # Strict validation of box coordinates
-                    if (all(0.0 <= coord <= 1.0 for coord in box) and
-                        0.001 < box[2] < 0.999 and  # width
-                        0.001 < box[3] < 0.999):    # height
-                        valid_boxes.append(box)
-                        valid_labels.append(label)
+                # Validate transformed boxes
+                valid_boxes, valid_labels = validate_boxes(
+                    transformed['bboxes'], 
+                    transformed['class_labels'],
+                    transformed['image'].shape
+                )
                 
-                if valid_boxes:
+                if len(valid_boxes) > 0:
                     boxes = torch.tensor(valid_boxes, dtype=torch.float32)
                     class_labels = torch.tensor(valid_labels, dtype=torch.long)
                 else:
+                    if DEBUG_MODE:
+                        logger.warning(f"All boxes were filtered out for {img_path}")
                     boxes = torch.zeros((0, 4), dtype=torch.float32)
                     class_labels = torch.zeros(0, dtype=torch.long)
+                
+                # Detailed debug logging
+                if DEBUG_MODE:
+                    if len(valid_boxes) != original_box_count:
+                        logger.info(f"Filtered {original_box_count - len(valid_boxes)} boxes in {img_path}")
+                    if len(valid_boxes) == 0:
+                        logger.warning(f"No boxes found for {img_path}")
+                    elif len(valid_boxes) > 20:
+                        logger.info(f"Large number of boxes ({len(valid_boxes)}) in {img_path}")
+                    if image.shape[0] > 1000 or image.shape[1] > 1000:
+                        logger.info(f"Large image size {image.shape} for {img_path}")
+                    if len(transformed['bboxes']) != original_box_count:
+                        logger.warning(f"Boxes changed after transform for {img_path} "
+                                     f"(Before: {original_box_count}, After: {len(transformed['bboxes'])})")
                 
                 image = transformed['image']
                 
-                # Verify tensor values
-                if torch.isnan(boxes).any() or torch.isinf(boxes).any():
-                    boxes = torch.zeros((0, 4), dtype=torch.float32)
-                    class_labels = torch.zeros(0, dtype=torch.long)
-                
             else:
-                # Handle cases with no boxes
-                transformed = self.transforms(
-                    image=image,
-                    bboxes=np.zeros((0, 4), dtype=np.float32),
-                    class_labels=np.array([], dtype=np.int64)
-                )
+                transformed = self.transforms(image=image)
                 image = transformed['image']
                 boxes = torch.zeros((0, 4), dtype=torch.float32)
                 class_labels = torch.zeros(0, dtype=torch.long)
                 
         except Exception as e:
-            print(f"Warning: Error in transformation for {img_path}: {str(e)}")
-            # Fallback to basic transformation
-            transformed = self.transforms(
-                image=image,
-                bboxes=np.zeros((0, 4), dtype=np.float32),
-                class_labels=np.array([], dtype=np.int64)
-            )
+            logger.error(f"Error in transformation for {img_path}: {str(e)}")
+            transformed = self.transforms(image=image)
             image = transformed['image']
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             class_labels = torch.zeros(0, dtype=torch.long)
         
-        # Return in SuperGradients expected format
+        # Additional validation before returning
+        if torch.isnan(boxes).any() or torch.isinf(boxes).any():
+            logger.warning(f"Invalid box values detected in {img_path}")
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
+            class_labels = torch.zeros(0, dtype=torch.long)
+            
         targets = {
             'boxes': boxes,
             'labels': class_labels
@@ -251,25 +288,5 @@ class AugmentedDetectionDataset(Dataset):
         metadata = {
             'image_path': img_path
         }
-        
-        # Add counter for filtered boxes
-        if len(boxes) != len(valid_boxes):
-            print(f"Filtered {len(boxes) - len(valid_boxes)} invalid boxes in {img_path}")
-        
-        if DEBUG_MODE:
-            # Only log problematic cases
-            if len(boxes) == 0:
-                print(f"Warning: No boxes found for {img_path}")
-            elif len(boxes) > 20:
-                print(f"Note: Large number of boxes ({len(boxes)}) in {img_path}")
-                
-            # Log unusual image sizes
-            if image.shape[0] > 1000 or image.shape[1] > 1000:
-                print(f"Note: Large image size {image.shape} for {img_path}")
-                
-            # Only log problematic transformations
-            if len(transformed['bboxes']) != len(boxes):
-                print(f"Warning: Number of boxes changed after transform for {img_path}")
-                print(f"Before: {len(boxes)}, After: {len(transformed['bboxes'])}")
         
         return image, targets, metadata 
