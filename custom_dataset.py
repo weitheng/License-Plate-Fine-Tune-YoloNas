@@ -1,3 +1,28 @@
+from typing import List, Tuple
+import os
+import cv2
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
+
+DEBUG_MODE = True  # Set to True to enable debug logging
+
+# Function to verify bbox format - this was used but not defined
+def verify_bbox_format(boxes):
+    """
+    Verify that boxes are in the correct format and have valid values.
+    """
+    if not isinstance(boxes, torch.Tensor):
+        raise ValueError("Boxes must be a torch.Tensor")
+    if boxes.dim() != 2 or boxes.shape[1] != 4:
+        raise ValueError(f"Boxes must be a Nx4 tensor, got shape {boxes.shape}")
+    if not torch.all((boxes >= 0) & (boxes <= 1)):
+        raise ValueError("Box coordinates must be in range [0, 1]")
+
 def collate_fn(batch: List[Tuple]) -> Tuple:
     """
     Custom collate function to handle variable-sized tensors and match SuperGradients YOLO format.
