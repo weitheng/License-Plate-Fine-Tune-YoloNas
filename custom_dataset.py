@@ -51,33 +51,43 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
     
     images = torch.stack([item[0] for item in batch])
     
-    # Convert targets to SuperGradients YOLO format
-    all_targets = []
-    for batch_idx, (_, target, _) in enumerate(batch):
-        boxes = target['boxes']
-        labels = target['labels'].float()
-        
-        if len(boxes) > 0:
-            # Ensure boxes are in correct format
-            if not isinstance(boxes, torch.Tensor):
-                boxes = torch.tensor(boxes, dtype=torch.float32)
-            if boxes.dim() != 2 or boxes.shape[1] != 4:
-                raise ValueError(f"Invalid box shape: {boxes.shape}")
-                
-            # Clip boxes to valid range
-            boxes = torch.clamp(boxes, 0, 1)
-            
-            batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
-            target_boxes = torch.cat([batch_col, labels.view(-1, 1), boxes], dim=1)
-            all_targets.append(target_boxes)
-    
-    if len(all_targets) > 0:
-        targets = torch.cat(all_targets, dim=0)
-        # Verify final target format
-        if targets.shape[1] != 6:
-            raise ValueError(f"Invalid target shape: {targets.shape}, expected Nx6")
-    else:
+    # Initialize empty target tensor
+    max_boxes = max(len(item[1]['boxes']) for item in batch)
+    if max_boxes == 0:
         targets = torch.zeros((0, 6), dtype=torch.float32)
+    else:
+        all_targets = []
+        for batch_idx, (_, target, _) in enumerate(batch):
+            boxes = target['boxes']
+            labels = target['labels']
+            
+            if len(boxes) > 0:
+                # Ensure boxes are valid
+                if torch.isnan(boxes).any() or torch.isinf(boxes).any():
+                    continue
+                    
+                # Create batch index column
+                batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
+                
+                # Combine batch index, labels, and boxes
+                target_boxes = torch.cat([
+                    batch_col,
+                    labels.float().view(-1, 1),
+                    boxes
+                ], dim=1)
+                
+                all_targets.append(target_boxes)
+        
+        if all_targets:
+            targets = torch.cat(all_targets, dim=0)
+        else:
+            targets = torch.zeros((0, 6), dtype=torch.float32)
+    
+    # Ensure targets has correct shape and no invalid values
+    if len(targets) > 0:
+        assert targets.shape[1] == 6, f"Invalid target shape: {targets.shape}"
+        assert not torch.isnan(targets).any(), "NaN values in targets"
+        assert not torch.isinf(targets).any(), "Inf values in targets"
     
     metadata = {
         'image_paths': [item[2]['image_path'] for item in batch]
@@ -133,27 +143,38 @@ def validate_boxes(boxes, labels, image_shape):
         # Unpack box coordinates
         x_center, y_center, width, height = box
         
-        # More lenient coordinate checks
+        # Basic sanity checks
+        if not all(isinstance(x, (int, float)) for x in box):
+            continue
+            
+        if any(np.isnan(box)) or any(np.isinf(box)):
+            continue
+            
+        # Ensure box dimensions are positive and within reasonable bounds
+        if width <= 0 or height <= 0 or width > 1.0 or height > 1.0:
+            continue
+            
+        # Ensure center is within image bounds
         if not (0 <= x_center <= 1 and 0 <= y_center <= 1):
             continue
             
-        # More lenient size checks
-        if width <= 0 or height <= 0:  # Only filter completely invalid boxes
-            continue
-        if width > 1 or height > 1:  # Only filter boxes larger than image
+        # Ensure box boundaries are within image
+        x_min = x_center - width/2
+        y_min = y_center - height/2
+        x_max = x_center + width/2
+        y_max = y_center + height/2
+        
+        if x_min < 0 or y_min < 0 or x_max > 1 or y_max > 1:
             continue
             
-        # Clip values to valid range instead of filtering
-        x_center = np.clip(x_center, 0.0, 1.0)
-        y_center = np.clip(y_center, 0.0, 1.0)
-        width = np.clip(width, 0.001, 1.0)
-        height = np.clip(height, 0.001, 1.0)
-        
-        # Add clipped box
+        # Add valid box and label
         valid_boxes.append([x_center, y_center, width, height])
         valid_labels.append(label)
     
-    return np.array(valid_boxes, dtype=np.float32), np.array(valid_labels)
+    if len(valid_boxes) == 0:
+        return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
+    
+    return np.array(valid_boxes, dtype=np.float32), np.array(valid_labels, dtype=np.int64)
 
 class AugmentedDetectionDataset(Dataset):
     """

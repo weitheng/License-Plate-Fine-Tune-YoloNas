@@ -15,7 +15,7 @@ def get_training_augmentations(input_size):
         A.Compose: Augmentation pipeline
     """
     transform = A.Compose([
-        # Basic resize with padding
+        # Resize with padding
         A.LongestMaxSize(max_size=max(input_size)),
         A.PadIfNeeded(
             min_height=input_size[0],
@@ -24,45 +24,30 @@ def get_training_augmentations(input_size):
             value=0
         ),
         
-        # Simple augmentations that preserve boxes better
+        # Basic augmentations that preserve boxes
         A.HorizontalFlip(p=0.5),
         
-        # Minimal geometric transforms
-        A.OneOf([
-            A.RandomResizedCrop(
-                height=input_size[0],
-                width=input_size[1],
-                scale=(0.95, 1.0),    # Very minimal scale change
-                ratio=(0.95, 1.05),    # Very minimal aspect ratio change
-                p=0.7
-            ),
-            A.Resize(
-                height=input_size[0],
-                width=input_size[1],
-                p=0.3
-            )
-        ], p=1.0),
-        
-        # Basic color adjustments
+        # Color adjustments (no geometric transforms)
         A.OneOf([
             A.RandomBrightnessContrast(
-                brightness_limit=(-0.1, 0.1),
-                contrast_limit=(-0.1, 0.1),
+                brightness_limit=(-0.2, 0.2),
+                contrast_limit=(-0.2, 0.2),
                 p=0.7
             ),
             A.HueSaturationValue(
-                hue_shift_limit=5,
-                sat_shift_limit=10,
-                val_shift_limit=10,
+                hue_shift_limit=10,
+                sat_shift_limit=20,
+                val_shift_limit=20,
                 p=0.3
             ),
         ], p=0.5),
         
-        A.ToFloat(max_value=255.0),
+        # Normalize and convert to tensor
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.3,  # Reduced from 0.6 to be more lenient
+        min_visibility=0.5,
         label_fields=['class_labels']
     ))
     
@@ -95,10 +80,10 @@ def get_validation_augmentations(input_size):
             border_mode=cv2.BORDER_CONSTANT,
             value=0
         ),
-        A.ToFloat(max_value=255.0),
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.3,  # Match training visibility threshold
+        min_visibility=0.5,
         label_fields=['class_labels']
     )) 
