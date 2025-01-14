@@ -146,6 +146,10 @@ class AugmentedDetectionDataset(Dataset):
         boxes = np.array(boxes, dtype=np.float32)
         class_labels = np.array(class_labels, dtype=np.int64)
         
+        # Initialize valid_boxes and valid_labels before try block
+        valid_boxes = []
+        valid_labels = []
+        
         # Apply augmentations with additional validation
         try:
             if len(boxes) > 0:
@@ -156,8 +160,6 @@ class AugmentedDetectionDataset(Dataset):
                 )
                 
                 # Validate transformed boxes
-                valid_boxes = []
-                valid_labels = []
                 for box, label in zip(transformed['bboxes'], transformed['class_labels']):
                     if all(0 <= coord <= 1 for coord in box):
                         valid_boxes.append(box)
@@ -205,9 +207,7 @@ class AugmentedDetectionDataset(Dataset):
         }
         
         # Add counter for filtered boxes
-        original_box_count = len(boxes)
-        valid_box_count = len(valid_boxes)
-        if original_box_count > valid_box_count:
-            print(f"Filtered {original_box_count - valid_box_count} invalid boxes in {img_path}")
+        if len(boxes) != len(valid_boxes):
+            print(f"Filtered {len(boxes) - len(valid_boxes)} invalid boxes in {img_path}")
         
         return image, targets, metadata 
