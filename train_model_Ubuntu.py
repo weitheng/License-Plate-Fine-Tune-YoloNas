@@ -1487,14 +1487,13 @@ def main():
         
         # Define loss function
         loss_fn = PPYoloELoss(
-            use_static_assigner=False,  # Changed to False
+            use_static_assigner=False,  # Changed to False for better dynamic assignment
             num_classes=81,
             reg_max=16,
-            box_loss_weight=5.0,       # Added explicit box loss weight
             iou_loss_weight=3.0,
             dfl_loss_weight=1.0,
-            use_dfl=True,              # Explicitly enable DFL
-            iou_type='giou'            # Use GIoU loss
+            use_dfl=True,
+            iou_type='giou'
         )
 
         # Get GPU memory if available
