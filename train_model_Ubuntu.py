@@ -1528,31 +1528,23 @@ def main():
             'silent_mode': False,
             'average_best_models': True,
             
-            # Learning rate and scheduler parameters - consolidated from config
-            'lr_mode': 'cosine',
+            # Learning rate and scheduler parameters
+            'lr_mode': 'cosine',  # Valid modes: 'cosine', 'step', 'poly'
             'lr_warmup_epochs': config.warmup_epochs,
-            'warmup_initial_lr': config.initial_lr / 10,  # Start warmup from 1/10th of initial_lr
+            'warmup_initial_lr': config.initial_lr / 10,
             'initial_lr': config.initial_lr,
             'max_epochs': config.num_epochs,
-            'warmup_mode': 'linear',
+            'warmup_mode': 'LinearEpochLRWarmup',  # Correct warmup mode from SuperGradients
             
             # Early stopping and optimization
             'early_stopping_patience': config.early_stopping_patience,
             'mixed_precision': torch.cuda.is_available(),
             'loss': loss_fn,
-            'optimizer': 'Adam',  # Specify optimizer explicitly
-            'optimizer_params': {
-                'weight_decay': config.weight_decay,
-                'betas': (0.9, 0.999)  # Default Adam betas
-            },
             
-            # Scheduler configuration
-            'lr_scheduler_params': {
-                'mode': 'epoch',
-                'warmup_epochs': config.warmup_epochs,
-                'warmup_initial_lr': config.initial_lr / 10,
-                'warmup_mode': 'linear',
-                'cosine_final_lr_ratio': 0.1  # Final LR will be initial_lr * this value
+            # Optimizer settings
+            'optimizer': 'Adam',
+            'optimizer_params': {
+                'weight_decay': config.weight_decay
             },
             
             # Metrics and logging
@@ -1571,7 +1563,6 @@ def main():
                 )
             ],
             'metric_to_watch': 'mAP@0.50',
-            'greater_metric_to_watch_is_better': True,  # Explicitly specify this
             
             # Logging configuration
             'sg_logger': 'wandb_sg_logger',
