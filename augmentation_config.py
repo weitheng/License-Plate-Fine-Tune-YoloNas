@@ -13,6 +13,16 @@ def get_training_augmentations(input_size):
         A.Compose: Augmentation pipeline
     """
     return A.Compose([
+        # First resize to maintain aspect ratio
+        A.LongestMaxSize(max_size=max(input_size)),
+        # Then pad if necessary to get exact size
+        A.PadIfNeeded(
+            min_height=input_size[0],
+            min_width=input_size[1],
+            border_mode=cv2.BORDER_CONSTANT,
+            value=0
+        ),
+        # Then apply other augmentations
         A.RandomResizedCrop(
             height=input_size[0],
             width=input_size[1],
@@ -102,9 +112,14 @@ def get_validation_augmentations(input_size):
         A.Compose: Augmentation pipeline
     """
     return A.Compose([
-        A.Resize(
-            height=input_size[0],
-            width=input_size[1]
+        # First resize to maintain aspect ratio
+        A.LongestMaxSize(max_size=max(input_size)),
+        # Then pad to get exact size
+        A.PadIfNeeded(
+            min_height=input_size[0],
+            min_width=input_size[1],
+            border_mode=cv2.BORDER_CONSTANT,
+            value=0
         ),
         A.ToFloat(max_value=255.0),  # Same normalization as training
         ToTensorV2(),
