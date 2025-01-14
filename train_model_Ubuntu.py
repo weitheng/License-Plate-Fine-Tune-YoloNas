@@ -1729,14 +1729,13 @@ def main():
                 raise PermissionError(f"No write permission for export directory: {export_dir}")
                 
             model.export(
-                onnx_path,
-                output_predictions_format="RAW_FORMAT",
-                max_batch_size=1,
+                output_path=onnx_path,
+                output_format="onnx",
+                prediction_type="raw",  # Use raw predictions instead of RAW_FORMAT
                 confidence_threshold=config.confidence_threshold,
                 nms_threshold=config.nms_threshold,
-                num_pre_nms_predictions=config.max_predictions,
-                input_image_shape=config.export_image_size,
-                device='cuda' if torch.cuda.is_available() else 'cpu'
+                num_pre_nms=config.max_predictions,  # Changed from num_pre_nms_predictions
+                input_shape=config.export_image_size  # Changed from input_image_shape
             )
             logger.success(f"✓ Model exported successfully to {onnx_path}")
         except Exception as e:
