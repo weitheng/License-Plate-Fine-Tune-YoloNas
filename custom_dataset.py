@@ -38,9 +38,16 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
         for batch_idx, (_, target, _) in enumerate(batch):
             boxes = target['boxes']
             if len(boxes) > 0:
+                # Validate box format
+                if not isinstance(boxes, torch.Tensor):
+                    raise ValueError(f"Boxes must be torch.Tensor, got {type(boxes)}")
+                if boxes.dim() != 2 or boxes.shape[1] != 4:
+                    raise ValueError(f"Boxes must be Nx4 tensor, got shape {boxes.shape}")
+                # Check for invalid values
                 invalid_boxes = boxes[~((boxes >= 0) & (boxes <= 1)).all(dim=1)]
                 if len(invalid_boxes) > 0:
-                    print(f"WARNING: Invalid box coordinates in batch {batch_idx}")
+                    print(f"WARNING: Found {len(invalid_boxes)} invalid boxes in batch {batch_idx}")
+                    print(f"Invalid boxes: {invalid_boxes}")
     
     images = torch.stack([item[0] for item in batch])
     
@@ -51,14 +58,24 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
         labels = target['labels'].float()
         
         if len(boxes) > 0:
-            verify_bbox_format(boxes)
+            # Ensure boxes are in correct format
+            if not isinstance(boxes, torch.Tensor):
+                boxes = torch.tensor(boxes, dtype=torch.float32)
+            if boxes.dim() != 2 or boxes.shape[1] != 4:
+                raise ValueError(f"Invalid box shape: {boxes.shape}")
+                
+            # Clip boxes to valid range
+            boxes = torch.clamp(boxes, 0, 1)
+            
             batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
             target_boxes = torch.cat([batch_col, labels.view(-1, 1), boxes], dim=1)
             all_targets.append(target_boxes)
     
     if len(all_targets) > 0:
         targets = torch.cat(all_targets, dim=0)
-        assert targets.shape[1] == 6, f"Invalid target shape: {targets.shape}"
+        # Verify final target format
+        if targets.shape[1] != 6:
+            raise ValueError(f"Invalid target shape: {targets.shape}, expected Nx6")
     else:
         targets = torch.zeros((0, 6), dtype=torch.float32)
     

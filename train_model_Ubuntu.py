@@ -1487,11 +1487,14 @@ def main():
         
         # Define loss function
         loss_fn = PPYoloELoss(
-            use_static_assigner=True,  # Try with static assigner
+            use_static_assigner=False,  # Changed to False
             num_classes=81,
             reg_max=16,
+            box_loss_weight=5.0,       # Added explicit box loss weight
             iou_loss_weight=3.0,
-            dfl_loss_weight=1.0  # Add explicit DFL weight
+            dfl_loss_weight=1.0,
+            use_dfl=True,              # Explicitly enable DFL
+            iou_type='giou'            # Use GIoU loss
         )
 
         # Get GPU memory if available
@@ -1613,13 +1616,23 @@ def main():
         cleanup_downloads()
 
         # Save final model checkpoint with absolute paths
-        final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth'))
-        trainer._save_checkpoint(
-            model_state=model.state_dict(),
-            optimizer_state=None,
-            scheduler_state=None,
-            checkpoint_path=final_checkpoint_path
-        )
+        try:
+            logger.info("Saving final model checkpoint...")
+            final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth'))
+            
+            # Use trainer's _save_checkpoint method
+            trainer._save_checkpoint(
+                checkpoint_path=final_checkpoint_path,
+                net=model.state_dict(),  # Changed from model_state to net
+                epoch=trainer.epoch,
+                optimizer=trainer.optimizer.state_dict() if trainer.optimizer else None,  # Changed from optimizer_state
+                scheduler=trainer.scheduler.state_dict() if trainer.scheduler else None,  # Changed from scheduler_state
+                scaler=None  # Add scaler parameter
+            )
+            logger.success(f"✓ Final checkpoint saved to {final_checkpoint_path}")
+        except Exception as e:
+            logger.error(f"Failed to save final checkpoint: {e}")
+            raise
 
         # Generate complete label map file with absolute path
         label_map_path = os.path.abspath(os.path.join(checkpoint_dir, 'label_map.txt'))
