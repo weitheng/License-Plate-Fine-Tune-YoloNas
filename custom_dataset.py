@@ -3,42 +3,47 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
-def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+def collate_fn(batch: List[Tuple]) -> Tuple:
     """
-    Custom collate function to handle variable-sized tensors.
+    Custom collate function to handle variable-sized tensors and match SuperGradients format.
     
     Args:
-        batch: List of dictionaries containing image data and annotations
+        batch: List of tuples containing (image, target, metadata)
         
     Returns:
-        Dictionary with batched data
+        Tuple of (images, targets, metadata)
     """
-    images = torch.stack([item['image'] for item in batch])
-    image_paths = [item['image_path'] for item in batch]
+    images = torch.stack([item[0] for item in batch])
     
     # Handle boxes and labels
-    boxes = [item['boxes'] for item in batch]
-    class_labels = [item['class_labels'] for item in batch]
+    all_boxes = [item[1]['boxes'] for item in batch]
+    all_labels = [item[1]['labels'] for item in batch]
     
     # Create padded boxes tensor
-    max_boxes = max(box.shape[0] for box in boxes)
+    max_boxes = max(box.shape[0] for box in all_boxes)
     padded_boxes = torch.zeros((len(batch), max_boxes, 4), dtype=torch.float32)
     padded_labels = torch.zeros((len(batch), max_boxes), dtype=torch.long)
     
     # Fill padded tensors
-    for idx, (box, label) in enumerate(zip(boxes, class_labels)):
-        if box.shape[0] > 0:  # Only if there are boxes
-            padded_boxes[idx, :box.shape[0]] = box
-            padded_labels[idx, :label.shape[0]] = label
+    for idx, (boxes, labels) in enumerate(zip(all_boxes, all_labels)):
+        if boxes.shape[0] > 0:  # Only if there are boxes
+            padded_boxes[idx, :boxes.shape[0]] = boxes
+            padded_labels[idx, :labels.shape[0]] = labels
     
-    return {
-        'image': images,
+    # Create targets dict matching SuperGradients format
+    targets = {
         'boxes': padded_boxes,
-        'class_labels': padded_labels,
-        'image_path': image_paths
+        'labels': padded_labels
     }
+    
+    # Metadata dict for any additional info
+    metadata = {
+        'image_paths': [item[2]['image_path'] for item in batch]
+    }
+    
+    return images, targets, metadata
 
 def clip_bbox(bbox):
     """Clip bounding box coordinates to be within [0, 1]"""
@@ -142,9 +147,14 @@ class AugmentedDetectionDataset(Dataset):
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             class_labels = torch.zeros(0, dtype=torch.long)
         
-        return {
-            'image': image,
+        # Return in SuperGradients expected format: (inputs, targets, additional_batch_items)
+        targets = {
             'boxes': boxes,
-            'class_labels': class_labels,
+            'labels': class_labels
+        }
+        
+        metadata = {
             'image_path': img_path
-        } 
+        }
+        
+        return image, targets, metadata 
