@@ -1226,6 +1226,40 @@ class CheckpointLoggingCallback(PhaseCallback):
                     self.last_ckpt_time = current_time
                     logger.success(f"✓ New best mAP@0.50: {current_map:.4f} - Checkpoint saved to {ckpt_path}")
 
+class LossDebugCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_BATCH_END)
+        
+    def __call__(self, context):
+        if context.batch_idx % 100 == 0:  # Log every 100 batches
+            loss_dict = context.loss_logging_items_dict
+            logger.info(f"Batch {context.batch_idx} losses:")
+            for loss_name, loss_value in loss_dict.items():
+                logger.info(f"  {loss_name}: {loss_value:.4f}")
+
+class ValidationDebugCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.VALIDATION_BATCH_END)
+        
+    def __call__(self, context):
+        if context.batch_idx == 0:  # Only for first batch
+            batch_output = context.preds
+            batch_targets = context.batch[1]  # Assuming targets are second element
+            
+            print("\n=== Validation Batch Debug ===")
+            print(f"Predictions shape: {batch_output.shape}")
+            print(f"Targets shape: {batch_targets.shape}")
+            
+            # Show sample predictions
+            if len(batch_output) > 0:
+                print("\nSample predictions:")
+                print(batch_output[0, :2])  # Show first 2 predictions of first image
+            
+            # Show sample targets
+            if len(batch_targets) > 0:
+                print("\nSample targets:")
+                print(batch_targets[0, :2])  # Show first 2 targets of first image
+
 def get_dataloaders(combined_dir, dataset_config, hw_params, config):
     """Initialize dataloaders with augmentations"""
     # Training dataset with augmentations
@@ -1451,8 +1485,7 @@ def main():
             num_classes=81,
             reg_max=16,
             iou_loss_weight=3.0,
-            dfl_loss_weight=1.0,  # Add explicit DFL weight
-            loss_weight={'class': 1.0, 'iou': 3.0, 'dfl': 1.0}  # Explicit loss weights
+            dfl_loss_weight=1.0  # Add explicit DFL weight
         )
 
         # Get GPU memory if available
@@ -1507,7 +1540,11 @@ def main():
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
             'resume_strict_load': False,
             'optimizer_params': {'weight_decay': config.weight_decay},
-            'phase_callbacks': [CheckpointLoggingCallback()]
+            'phase_callbacks': [
+                CheckpointLoggingCallback(),
+                LossDebugCallback(),
+                ValidationDebugCallback()
+            ]
         }
 
         # Update dataloader params with absolute paths
