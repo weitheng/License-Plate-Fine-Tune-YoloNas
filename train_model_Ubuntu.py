@@ -1216,7 +1216,7 @@ def validate_image_paths(data_dir: str) -> None:
 
 class CheckpointLoggingCallback(PhaseCallback):
     def __init__(self):
-        super().__init__(phase=Phase.VALIDATION_END)
+        super().__init__(phase=Phase.VALIDATION_EPOCH_END)
         self.best_map = 0
         self.last_ckpt_time = 0
 
