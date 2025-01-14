@@ -4,10 +4,19 @@ import torch
 from torch.utils.data import Dataset
 import os
 from typing import List, Dict, Any, Tuple
+import logging
+
+def verify_bbox_format(boxes: torch.Tensor) -> None:
+    """Verify bounding box format and values"""
+    if len(boxes) > 0:
+        if not torch.all((boxes >= 0) & (boxes <= 1)):
+            invalid_boxes = boxes[~((boxes >= 0) & (boxes <= 1))]
+            logging.warning(f"Invalid box coordinates found: {invalid_boxes}")
+            raise ValueError("Box coordinates must be in [0,1]")
 
 def collate_fn(batch: List[Tuple]) -> Tuple:
     """
-    Custom collate function to handle variable-sized tensors and match SuperGradients format.
+    Custom collate function to handle variable-sized tensors and match SuperGradients YOLO format.
     
     Args:
         batch: List of tuples containing (image, target, metadata)
@@ -17,26 +26,36 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
     """
     images = torch.stack([item[0] for item in batch])
     
-    # Handle boxes and labels
-    all_boxes = [item[1]['boxes'] for item in batch]
-    all_labels = [item[1]['labels'] for item in batch]
+    # Verify image sizes
+    expected_shape = images[0].shape
+    for idx, img in enumerate(images):
+        if img.shape != expected_shape:
+            raise ValueError(f"Inconsistent image size at index {idx}: "
+                           f"got {img.shape}, expected {expected_shape}")
     
-    # Create padded boxes tensor
-    max_boxes = max(box.shape[0] for box in all_boxes)
-    padded_boxes = torch.zeros((len(batch), max_boxes, 4), dtype=torch.float32)
-    padded_labels = torch.zeros((len(batch), max_boxes), dtype=torch.long)
+    # Convert targets to SuperGradients YOLO format
+    # Format: [batch_idx, class_id, x, y, w, h]
+    all_targets = []
+    for batch_idx, (_, target, _) in enumerate(batch):
+        boxes = target['boxes']
+        labels = target['labels'].float()  # Ensure float type
+        
+        if len(boxes) > 0:
+            verify_bbox_format(boxes)
+            batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
+            # Convert labels to 2D tensor
+            labels = labels.view(-1, 1).float()
+            # Combine into YOLO format
+            target_boxes = torch.cat([batch_col, labels, boxes], dim=1)
+            all_targets.append(target_boxes)
     
-    # Fill padded tensors
-    for idx, (boxes, labels) in enumerate(zip(all_boxes, all_labels)):
-        if boxes.shape[0] > 0:  # Only if there are boxes
-            padded_boxes[idx, :boxes.shape[0]] = boxes
-            padded_labels[idx, :labels.shape[0]] = labels
-    
-    # Create targets dict matching SuperGradients format
-    targets = {
-        'boxes': padded_boxes,
-        'labels': padded_labels
-    }
+    # Concatenate all targets if any exist
+    if len(all_targets) > 0:
+        targets = torch.cat(all_targets, dim=0)
+        assert targets.shape[1] == 6, f"Invalid target shape: {targets.shape}"
+    else:
+        # Create empty tensor with correct shape if no targets
+        targets = torch.zeros((0, 6), dtype=torch.float32)  # 6 columns: [batch_idx, class_id, x, y, w, h]
     
     # Metadata dict for any additional info
     metadata = {
