@@ -24,6 +24,11 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
     Returns:
         Tuple of (images, targets, metadata)
     """
+    # Add debug logging
+    print(f"Batch size: {len(batch)}")
+    print(f"Sample targets shape: {batch[0][1]['boxes'].shape}")
+    print(f"Sample labels shape: {batch[0][1]['labels'].shape}")
+    
     images = torch.stack([item[0] for item in batch])
     
     # Verify image sizes
@@ -43,10 +48,10 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
         if len(boxes) > 0:
             verify_bbox_format(boxes)
             batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
-            # Convert labels to 2D tensor
-            labels = labels.view(-1, 1).float()
+            # Ensure boxes are in correct format
+            print(f"Boxes for batch {batch_idx}: {boxes}")
             # Combine into YOLO format
-            target_boxes = torch.cat([batch_col, labels, boxes], dim=1)
+            target_boxes = torch.cat([batch_col, labels.view(-1, 1), boxes], dim=1)
             all_targets.append(target_boxes)
     
     # Concatenate all targets if any exist
@@ -108,9 +113,17 @@ class AugmentedDetectionDataset(Dataset):
         return len(self.image_files)
     
     def __getitem__(self, idx):
-        # Get image path
+        # Add debug logging
         img_name = self.image_files[idx]
         img_path = os.path.join(self.images_dir, img_name)
+        label_path = os.path.join(
+            self.labels_dir,
+            img_name.rsplit('.', 1)[0] + '.txt'
+        )
+        
+        # Debug print
+        print(f"Loading image: {img_path}")
+        print(f"Loading label: {label_path}")
         
         # Read image
         image = cv2.imread(img_path)
@@ -119,12 +132,6 @@ class AugmentedDetectionDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         # Read corresponding label file
-        label_path = os.path.join(
-            self.labels_dir,
-            img_name.rsplit('.', 1)[0] + '.txt'
-        )
-        
-        # Parse YOLO format labels
         boxes = []
         class_labels = []
         
@@ -209,5 +216,9 @@ class AugmentedDetectionDataset(Dataset):
         # Add counter for filtered boxes
         if len(boxes) != len(valid_boxes):
             print(f"Filtered {len(boxes) - len(valid_boxes)} invalid boxes in {img_path}")
+        
+        # After loading boxes and labels
+        print(f"Number of boxes: {len(boxes)}")
+        print(f"Box coordinates sample: {boxes[:2] if len(boxes) > 0 else 'No boxes'}")
         
         return image, targets, metadata 

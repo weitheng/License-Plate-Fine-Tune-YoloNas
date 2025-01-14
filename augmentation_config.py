@@ -12,7 +12,7 @@ def get_training_augmentations(input_size):
     Returns:
         A.Compose: Augmentation pipeline
     """
-    return A.Compose([
+    transform = A.Compose([
         # First resize to maintain aspect ratio
         A.LongestMaxSize(max_size=max(input_size)),
         # Then pad if necessary to get exact size
@@ -99,6 +99,23 @@ def get_training_augmentations(input_size):
         min_visibility=0.3,
         label_fields=['class_labels']
     ))
+    
+    # Add debug wrapper
+    def debug_transform(**kwargs):
+        print("Input to transform:")
+        print(f"Image shape: {kwargs['image'].shape}")
+        print(f"Bboxes: {kwargs['bboxes']}")
+        print(f"Labels: {kwargs['class_labels']}")
+        
+        result = transform(**kwargs)
+        
+        print("Output from transform:")
+        print(f"Transformed image shape: {result['image'].shape}")
+        print(f"Transformed bboxes: {result['bboxes']}")
+        print(f"Transformed labels: {result['class_labels']}")
+        return result
+        
+    return debug_transform
 
 def get_validation_augmentations(input_size):
     """

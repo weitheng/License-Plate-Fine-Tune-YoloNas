@@ -917,6 +917,14 @@ def monitor_memory():
 def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict, force_new: bool = False) -> dict:
     """
     Setup checkpoint resuming logic with proper validation.
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoints
+        train_params: Current training parameters
+        force_new: If True, ignore existing checkpoints and start fresh
+        
+    Returns:
+        Updated training parameters dict
     """
     if force_new:
         logger.info("Starting fresh training as requested (--no-resume)")
@@ -991,44 +999,32 @@ def verify_checkpoint(checkpoint_path: str, is_model_weights: bool = False) -> b
     """
     try:
         if not os.path.exists(checkpoint_path):
-            logger.warning(f"Checkpoint file not found: {checkpoint_path}")
             return False
             
         # Check file size
-        file_size = os.path.getsize(checkpoint_path)
-        if file_size < 1000:  # Arbitrary minimum size
-            logger.warning(f"Checkpoint file too small ({file_size} bytes): {checkpoint_path}")
+        if os.path.getsize(checkpoint_path) < 1000:  # Arbitrary minimum size
+            logger.warning(f"Checkpoint file too small: {checkpoint_path}")
             return False
             
         # Try loading the checkpoint
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         
         if is_model_weights:
-            # For model weights, verify it's a valid state dict
+            # For model weights, just verify it's a valid state dict
             if not isinstance(checkpoint, dict):
                 logger.warning(f"Invalid model weights format in {checkpoint_path}")
-                return False
-            # Check if state dict has expected keys
-            if not any(key.startswith(('model', 'net', 'state_dict')) for key in checkpoint.keys()):
-                logger.warning(f"No model state dict found in {checkpoint_path}")
                 return False
             return True
         else:
             # For training checkpoints, check for required keys
             required_keys = ['net', 'epoch', 'optimizer_state_dict']
-            missing_keys = [key for key in required_keys if key not in checkpoint]
-            if missing_keys:
-                logger.warning(f"Checkpoint missing required keys {missing_keys}: {checkpoint_path}")
+            if not all(key in checkpoint for key in required_keys):
+                logger.warning(f"Checkpoint missing required keys: {checkpoint_path}")
                 return False
                 
             # Verify model state dict
             if not isinstance(checkpoint['net'], dict):
                 logger.warning("Invalid model state dict in checkpoint")
-                return False
-                
-            # Verify epoch number is valid
-            if not isinstance(checkpoint['epoch'], (int, float)) or checkpoint['epoch'] < 0:
-                logger.warning(f"Invalid epoch number in checkpoint: {checkpoint.get('epoch')}")
                 return False
                 
             return True
@@ -1451,11 +1447,14 @@ def main():
         
         # Define loss function
         loss_fn = PPYoloELoss(
-            use_static_assigner=False,
+            use_static_assigner=True,  # Try with static assigner
             num_classes=81,
             reg_max=16,
-            iou_loss_weight=3.0
+            iou_loss_weight=3.0,
+            dfl_loss_weight=1.0,  # Add explicit DFL weight
+            loss_weight={'class': 1.0, 'iou': 3.0, 'dfl': 1.0}  # Explicit loss weights
         )
+            num_classes=81,
 
         # Get GPU memory if available
         gpu_memory_gb = 0
@@ -1528,19 +1527,6 @@ def main():
         try:
             logger.info("Checking for existing checkpoints...")
             train_params = setup_checkpoint_resuming(checkpoint_dir, train_params, force_new=args.no_resume)
-            
-            # Verify the checkpoint path if resuming
-            if train_params['resume']:
-                checkpoint_path = train_params['resume_path']
-                logger.info(f"Verifying checkpoint at {checkpoint_path}")
-                
-                # Double-check the checkpoint is still valid
-                if not verify_checkpoint(checkpoint_path):
-                    logger.warning("Checkpoint is invalid - starting from scratch")
-                    train_params.update({
-                        'resume': False,
-                        'resume_path': None
-                    })
         except Exception as e:
             logger.error(f"Error setting up checkpoint resuming: {e}")
             logger.warning("Starting training from scratch")
