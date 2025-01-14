@@ -65,13 +65,28 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
     return images, targets, metadata
 
 def clip_bbox(bbox):
-    """Clip bounding box coordinates to be within [0, 1]"""
+    """
+    Clip bounding box coordinates to be within [0, 1] and validate dimensions.
+    Returns None if the bbox becomes invalid after clipping.
+    """
     x_center, y_center, width, height = bbox
+    
+    # Clip centers to [0, 1]
     x_center = np.clip(x_center, 0.0, 1.0)
     y_center = np.clip(y_center, 0.0, 1.0)
-    # Ensure width and height are positive and don't exceed boundaries
-    width = np.clip(width, 0.0, min(2 * x_center, 2 * (1 - x_center)))
-    height = np.clip(height, 0.0, min(2 * y_center, 2 * (1 - y_center)))
+    
+    # Ensure box stays within image bounds
+    width = min(width, 2 * min(x_center, 1 - x_center))
+    height = min(height, 2 * min(y_center, 1 - y_center))
+    
+    # Validate dimensions
+    if width <= 0 or height <= 0:
+        return None
+        
+    # Ensure minimum size
+    if width < 0.001 or height < 0.001:
+        return None
+    
     return [x_center, y_center, width, height]
 
 class AugmentedDetectionDataset(Dataset):
@@ -118,9 +133,9 @@ class AugmentedDetectionDataset(Dataset):
                 for line in f.readlines():
                     try:
                         class_id, x_center, y_center, width, height = map(float, line.strip().split())
-                        # Clip bbox coordinates to valid range
+                        # Clip and validate bbox coordinates
                         bbox = clip_bbox([x_center, y_center, width, height])
-                        if all(0 <= coord <= 1 for coord in bbox):  # Additional validation
+                        if bbox is not None:  # Only add valid boxes
                             boxes.append(bbox)
                             class_labels.append(class_id)
                     except Exception as e:
@@ -131,7 +146,7 @@ class AugmentedDetectionDataset(Dataset):
         boxes = np.array(boxes, dtype=np.float32)
         class_labels = np.array(class_labels, dtype=np.int64)
         
-        # Apply augmentations
+        # Apply augmentations with additional validation
         try:
             if len(boxes) > 0:
                 transformed = self.transforms(
@@ -140,9 +155,20 @@ class AugmentedDetectionDataset(Dataset):
                     class_labels=class_labels
                 )
                 
-                image = transformed['image']
-                boxes = torch.tensor(transformed['bboxes'], dtype=torch.float32) if transformed['bboxes'] else torch.zeros((0, 4), dtype=torch.float32)
-                class_labels = torch.tensor(transformed['class_labels'], dtype=torch.long) if transformed['class_labels'] else torch.zeros(0, dtype=torch.long)
+                # Validate transformed boxes
+                valid_boxes = []
+                valid_labels = []
+                for box, label in zip(transformed['bboxes'], transformed['class_labels']):
+                    if all(0 <= coord <= 1 for coord in box):
+                        valid_boxes.append(box)
+                        valid_labels.append(label)
+                
+                if valid_boxes:
+                    boxes = torch.tensor(valid_boxes, dtype=torch.float32)
+                    class_labels = torch.tensor(valid_labels, dtype=torch.long)
+                else:
+                    boxes = torch.zeros((0, 4), dtype=torch.float32)
+                    class_labels = torch.zeros(0, dtype=torch.long)
             else:
                 # Handle cases with no boxes
                 transformed = self.transforms(
@@ -166,7 +192,9 @@ class AugmentedDetectionDataset(Dataset):
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             class_labels = torch.zeros(0, dtype=torch.long)
         
-        # Return in SuperGradients expected format: (inputs, targets, additional_batch_items)
+        image = transformed['image']
+        
+        # Return in SuperGradients expected format
         targets = {
             'boxes': boxes,
             'labels': class_labels
@@ -175,5 +203,11 @@ class AugmentedDetectionDataset(Dataset):
         metadata = {
             'image_path': img_path
         }
+        
+        # Add counter for filtered boxes
+        original_box_count = len(boxes)
+        valid_box_count = len(valid_boxes)
+        if original_box_count > valid_box_count:
+            print(f"Filtered {original_box_count - valid_box_count} invalid boxes in {img_path}")
         
         return image, targets, metadata 
