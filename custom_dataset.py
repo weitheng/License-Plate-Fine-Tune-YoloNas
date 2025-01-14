@@ -6,7 +6,7 @@ import os
 from typing import List, Dict, Any, Tuple
 import logging
 
-DEBUG_MODE = False  # Set to True only when debugging
+DEBUG_MODE = True  # Set to True only when debugging
 
 def verify_bbox_format(boxes: torch.Tensor) -> None:
     """Verify bounding box format and values"""
@@ -26,10 +26,24 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
     Returns:
         Tuple of (images, targets, metadata)
     """
-    # Add debug logging
-    print(f"Batch size: {len(batch)}")
-    print(f"Sample targets shape: {batch[0][1]['boxes'].shape}")
-    print(f"Sample labels shape: {batch[0][1]['labels'].shape}")
+    if DEBUG_MODE:
+        # Only log batch size and unusual conditions
+        print(f"Processing batch of size: {len(batch)}")
+        
+        # Check for empty or unusually large boxes
+        for batch_idx, (_, target, _) in enumerate(batch):
+            boxes = target['boxes']
+            if len(boxes) == 0:
+                print(f"Warning: Empty boxes in batch {batch_idx}")
+            elif len(boxes) > 20:  # Arbitrary threshold for many boxes
+                print(f"Note: Large number of boxes ({len(boxes)}) in batch {batch_idx}")
+            
+            # Only log problematic boxes
+            if len(boxes) > 0:
+                invalid_boxes = boxes[~((boxes >= 0) & (boxes <= 1)).all(dim=1)]
+                if len(invalid_boxes) > 0:
+                    print(f"Warning: Invalid box coordinates in batch {batch_idx}:")
+                    print(invalid_boxes)
     
     images = torch.stack([item[0] for item in batch])
     
@@ -223,5 +237,21 @@ class AugmentedDetectionDataset(Dataset):
         # After loading boxes and labels
         print(f"Number of boxes: {len(boxes)}")
         print(f"Box coordinates sample: {boxes[:2] if len(boxes) > 0 else 'No boxes'}")
+        
+        if DEBUG_MODE:
+            # Only log problematic cases
+            if len(boxes) == 0:
+                print(f"Warning: No boxes found for {img_path}")
+            elif len(boxes) > 20:
+                print(f"Note: Large number of boxes ({len(boxes)}) in {img_path}")
+                
+            # Log unusual image sizes
+            if image.shape[0] > 1000 or image.shape[1] > 1000:
+                print(f"Note: Large image size {image.shape} for {img_path}")
+                
+            # Only log problematic transformations
+            if len(transformed['bboxes']) != len(boxes):
+                print(f"Warning: Number of boxes changed after transform for {img_path}")
+                print(f"Before: {len(boxes)}, After: {len(transformed['bboxes'])}")
         
         return image, targets, metadata 
