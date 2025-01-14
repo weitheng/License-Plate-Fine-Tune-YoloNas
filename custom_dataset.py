@@ -150,27 +150,26 @@ def validate_boxes(boxes, labels, image_shape):
     valid_labels = []
     
     img_height, img_width = image_shape[:2]
-    # More lenient minimum size (1 pixel)
-    min_size = 1.0 / min(img_height, img_width)
     
     for box, label in zip(boxes, labels):
         # Unpack box coordinates
         x_center, y_center, width, height = box
         
-        # Basic validation
+        # Skip invalid values
         if any(np.isnan(box)) or any(np.isinf(box)):
             continue
             
-        # More lenient size checks
-        if width <= 0 or height <= 0:  # Only filter completely invalid boxes
+        # Ensure positive dimensions
+        if width <= 0 or height <= 0:
             continue
             
-        if width > 1.0 or height > 1.0:  # Only filter boxes larger than image
-            continue
-            
-        # More lenient center checks
-        x_center = np.clip(x_center, 0, 1)
-        y_center = np.clip(y_center, 0, 1)
+        # Clip dimensions to valid range
+        width = np.clip(width, 0, 1)
+        height = np.clip(height, 0, 1)
+        
+        # Clip centers to image
+        x_center = np.clip(x_center, width/2, 1 - width/2)
+        y_center = np.clip(y_center, height/2, 1 - height/2)
         
         # Calculate box boundaries
         x_min = x_center - width/2
@@ -178,37 +177,26 @@ def validate_boxes(boxes, labels, image_shape):
         x_max = x_center + width/2
         y_max = y_center + height/2
         
-        # Try to fix boxes that are slightly outside
-        if x_min < 0 or y_min < 0 or x_max > 1 or y_max > 1:
-            # Clip coordinates
-            x_min = np.clip(x_min, 0, 1)
-            y_min = np.clip(y_min, 0, 1)
-            x_max = np.clip(x_max, 0, 1)
-            y_max = np.clip(y_max, 0, 1)
+        # Ensure box is within bounds
+        if x_min < 0:
+            x_center += abs(x_min)
+        if y_min < 0:
+            y_center += abs(y_min)
+        if x_max > 1:
+            x_center -= (x_max - 1)
+        if y_max > 1:
+            y_center -= (y_max - 1)
             
-            # Recalculate dimensions
-            width = x_max - x_min
-            height = y_max - y_min
-            x_center = x_min + width/2
-            y_center = y_min + height/2
-            
-            # Only filter if box became too small after clipping
-            if width <= 0 or height <= 0:
-                continue
-        
-        # Add valid box and label
-        valid_boxes.append([x_center, y_center, width, height])
-        valid_labels.append(label)
+        # Final validation
+        if 0 <= x_center <= 1 and 0 <= y_center <= 1 and width > 0 and height > 0:
+            valid_boxes.append([x_center, y_center, width, height])
+            valid_labels.append(label)
     
     if len(valid_boxes) == 0:
         return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
     
     valid_boxes = np.array(valid_boxes, dtype=np.float32)
     valid_labels = np.array(valid_labels, dtype=np.int64)
-    
-    # Final sanity check
-    if np.any(np.isnan(valid_boxes)) or np.any(np.isinf(valid_boxes)):
-        return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
     
     return valid_boxes, valid_labels
 
@@ -366,3 +354,24 @@ class AugmentedDetectionDataset(Dataset):
         }
         
         return image, targets, metadata 
+
+class BoxStatisticsCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_BATCH_END)
+        self.batch_count = 0
+        
+    def __call__(self, context):
+        self.batch_count += 1
+        if self.batch_count % 100 == 0:
+            # Get targets from batch
+            targets = context.batch[1]
+            if len(targets) > 0:
+                # Calculate box statistics
+                boxes = targets[:, 2:]  # Last 4 columns are box coordinates
+                widths = boxes[:, 2]
+                heights = boxes[:, 3]
+                
+                logger.info(f"\nBox Statistics:")
+                logger.info(f"Number of boxes: {len(boxes)}")
+                logger.info(f"Width range: [{widths.min():.4f}, {widths.max():.4f}]")
+                logger.info(f"Height range: [{heights.min():.4f}, {heights.max():.4f}]") 

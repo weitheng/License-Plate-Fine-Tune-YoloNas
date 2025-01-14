@@ -1606,7 +1606,8 @@ def main():
                 CheckpointLoggingCallback(),
                 LossDebugCallback(),
                 ValidationDebugCallback(),
-                LossComponentCallback()
+                LossComponentCallback(),
+                BoxStatisticsCallback()
             ]
         }
 
