@@ -15,10 +15,16 @@ def get_training_augmentations(input_size):
         A.Compose: Augmentation pipeline
     """
     transform = A.Compose([
-        # Basic resize and padding
-        A.Resize(height=input_size[0], width=input_size[1]),
+        # Basic resize with consistent aspect ratio
+        A.LongestMaxSize(max_size=max(input_size)),
+        A.PadIfNeeded(
+            min_height=input_size[0],
+            min_width=input_size[1],
+            border_mode=cv2.BORDER_CONSTANT,
+            value=(0, 0, 0)
+        ),
         
-        # Color adjustments only (no geometric transforms)
+        # Mild color adjustments
         A.OneOf([
             A.RandomBrightnessContrast(
                 brightness_limit=(-0.1, 0.1),
@@ -31,14 +37,14 @@ def get_training_augmentations(input_size):
                 val_shift_limit=10,
                 p=0.3
             ),
-        ], p=0.5),
+        ], p=0.3),  # Reduced probability
         
         # Normalize and convert to tensor
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.3,
+        min_visibility=0.5,  # Increased from 0.3
         label_fields=['class_labels']
     ))
     
@@ -69,6 +75,6 @@ def get_validation_augmentations(input_size):
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.3,
+        min_visibility=0.5,
         label_fields=['class_labels']
     )) 
