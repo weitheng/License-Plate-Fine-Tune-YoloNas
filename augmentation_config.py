@@ -2,6 +2,8 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cv2
 
+DEBUG_MODE = True  # Set to True to enable debug logging
+
 def get_training_augmentations(input_size):
     """
     Get training augmentations pipeline using Albumentations.
