@@ -1508,7 +1508,6 @@ def main():
             num_classes=81,
             reg_max=16,
             use_static_assigner=True,
-            iou_type='giou',
             loss_weights={
                 'class': 1.0,
                 'iou': 5.0,
@@ -1713,10 +1712,13 @@ def main():
                 
             model.export(
                 onnx_path,
-                output_predictions_format="FLAT_FORMAT",
-                max_predictions_per_image=config.max_predictions,
+                output_predictions_format="RAW_FORMAT",
+                max_batch_size=1,
                 confidence_threshold=config.confidence_threshold,
-                input_image_shape=config.export_image_size
+                nms_threshold=config.nms_threshold,
+                num_pre_nms_predictions=config.max_predictions,
+                input_image_shape=config.export_image_size,
+                device='cuda' if torch.cuda.is_available() else 'cpu'
             )
             logger.success(f"✓ Model exported successfully to {onnx_path}")
         except Exception as e:
