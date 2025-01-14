@@ -29,14 +29,6 @@ def get_training_augmentations(input_size):
             value=0,
             p=0.4
         ),
-        A.OpticalDistortion(
-            distort_limit=0.05,
-            shift_limit=0.05,
-            border_mode=cv2.BORDER_CONSTANT,
-            value=0,
-            p=0.2
-        ),
-        # Enhanced low-light and CCTV-specific augmentations
         A.OneOf([
             A.RandomBrightnessContrast(
                 brightness_limit=(-0.3, 0.2),  # Allow more darkening
@@ -55,16 +47,6 @@ def get_training_augmentations(input_size):
             A.GaussNoise(var_limit=(10.0, 80.0), mean=0, p=0.5),  # Increased variance for low-light noise
             A.MultiplicativeNoise(multiplier=(0.7, 1.3), p=0.5),  # Simulate sensor noise
         ], p=0.5),
-        A.CoarseDropout(
-            max_holes=6,
-            max_height=input_size[0]//25,
-            max_width=input_size[1]//25,
-            min_holes=1,
-            min_height=input_size[0]//50,
-            min_width=input_size[1]//50,
-            fill_value=0,
-            p=0.2
-        ),
         # Enhanced blur for CCTV footage
         A.OneOf([
             A.GaussianBlur(blur_limit=(3, 7), p=0.5),
@@ -73,14 +55,6 @@ def get_training_augmentations(input_size):
         ], p=0.4),
         # Weather and lighting effects
         A.OneOf([
-            A.RandomRain(
-                drop_length=20,
-                drop_width=1,
-                drop_color=(200, 200, 200),
-                blur_value=7,
-                brightness_coefficient=0.7,
-                p=0.5
-            ),
             A.RandomShadow(
                 shadow_roi=(0, 0.5, 1, 1),
                 num_shadows_lower=1,
