@@ -1503,13 +1503,17 @@ def main():
             logger.error(f"Failed to initialize model: {e}")
             raise RuntimeError("Model initialization failed") from e
         
-        # Define loss function
+        # Define loss function with simplified weights
         loss_fn = PPYoloELoss(
-            use_static_assigner=False,  # Changed to False for better dynamic assignment
             num_classes=81,
             reg_max=16,
-            iou_loss_weight=3.0,
-            dfl_loss_weight=1.0
+            use_static_assigner=True,
+            iou_type='giou',
+            loss_weights={
+                'class': 1.0,
+                'iou': 5.0,
+                'dfl': 2.0
+            }
         )
 
         # Get GPU memory if available
