@@ -1529,7 +1529,6 @@ def main():
             use_static_assigner=True,
             iou_loss_weight=5.0,      # Weight for IoU loss
             dfl_loss_weight=2.0,      # Weight for DFL loss
-            cls_loss_weight=1.0,      # Weight for classification loss
             static_assigner_epoch=100  # Use static assigner after this epoch
         )
 

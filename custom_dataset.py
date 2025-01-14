@@ -150,6 +150,7 @@ def validate_boxes(boxes, labels, image_shape):
     valid_labels = []
     
     img_height, img_width = image_shape[:2]
+    min_size = 2.0 / min(img_height, img_width)  # Minimum 2 pixels
     
     for box, label in zip(boxes, labels):
         # Unpack box coordinates
@@ -162,31 +163,30 @@ def validate_boxes(boxes, labels, image_shape):
         if any(np.isnan(box)) or any(np.isinf(box)):
             continue
             
-        # Ensure reasonable box dimensions (at least 2 pixels)
-        min_size = 2.0 / min(img_height, img_width)
-        if width < min_size or height < min_size:
+        # Ensure box dimensions are valid
+        if width <= min_size or height <= min_size:
             continue
             
-        if width > 1.0 or height > 1.0:
+        if width >= 1.0 or height >= 1.0:
             continue
             
         # Ensure center is within image
         if not (0 <= x_center <= 1 and 0 <= y_center <= 1):
             continue
             
-        # Ensure box boundaries are within image
+        # Calculate box boundaries
         x_min = x_center - width/2
         y_min = y_center - height/2
         x_max = x_center + width/2
         y_max = y_center + height/2
         
-        # Ensure box is fully within image
+        # Ensure box is within image bounds
         if x_min < 0 or y_min < 0 or x_max > 1 or y_max > 1:
             # Try to clip the box
-            x_min = max(0, x_min)
-            y_min = max(0, y_min)
-            x_max = min(1, x_max)
-            y_max = min(1, y_max)
+            x_min = np.clip(x_min, 0, 1)
+            y_min = np.clip(y_min, 0, 1)
+            x_max = np.clip(x_max, 0, 1)
+            y_max = np.clip(y_max, 0, 1)
             
             # Recalculate center and dimensions
             width = x_max - x_min
@@ -194,9 +194,14 @@ def validate_boxes(boxes, labels, image_shape):
             x_center = x_min + width/2
             y_center = y_min + height/2
             
-            # Verify box is still valid
-            if width < min_size or height < min_size:
+            # Skip if box became too small after clipping
+            if width <= min_size or height <= min_size:
                 continue
+        
+        # Ensure final box coordinates are valid
+        if not (0 <= x_center <= 1 and 0 <= y_center <= 1 and 
+                0 < width < 1 and 0 < height < 1):
+            continue
         
         # Add valid box and label
         valid_boxes.append([x_center, y_center, width, height])
@@ -205,7 +210,14 @@ def validate_boxes(boxes, labels, image_shape):
     if len(valid_boxes) == 0:
         return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
     
-    return np.array(valid_boxes, dtype=np.float32), np.array(valid_labels, dtype=np.int64)
+    valid_boxes = np.array(valid_boxes, dtype=np.float32)
+    valid_labels = np.array(valid_labels, dtype=np.int64)
+    
+    # Final sanity check on the entire array
+    if np.any(np.isnan(valid_boxes)) or np.any(np.isinf(valid_boxes)):
+        return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
+    
+    return valid_boxes, valid_labels
 
 class AugmentedDetectionDataset(Dataset):
     """
