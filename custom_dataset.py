@@ -29,6 +29,8 @@ class AugmentedDetectionDataset(Dataset):
         
         # Read image
         image = cv2.imread(img_path)
+        if image is None:
+            raise ValueError(f"Failed to load image: {img_path}")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         # Read corresponding label file
@@ -61,11 +63,15 @@ class AugmentedDetectionDataset(Dataset):
             )
             
             image = transformed['image']
-            boxes = torch.tensor(transformed['bboxes'], dtype=torch.float32)
-            class_labels = torch.tensor(transformed['class_labels'], dtype=torch.long)
+            boxes = torch.tensor(transformed['bboxes'], dtype=torch.float32) if transformed['bboxes'] else torch.zeros((0, 4), dtype=torch.float32)
+            class_labels = torch.tensor(transformed['class_labels'], dtype=torch.long) if transformed['class_labels'] else torch.zeros(0, dtype=torch.long)
         else:
             # Handle cases with no boxes
-            transformed = self.transforms(image=image)
+            transformed = self.transforms(
+                image=image,
+                bboxes=np.zeros((0, 4), dtype=np.float32),  # Empty bbox array
+                class_labels=np.array([], dtype=np.int64)    # Empty labels array
+            )
             image = transformed['image']
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             class_labels = torch.zeros(0, dtype=torch.long)
