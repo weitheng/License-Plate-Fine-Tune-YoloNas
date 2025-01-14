@@ -1235,7 +1235,7 @@ class LossDebugCallback(PhaseCallback):
             logger.info(f"Batch {context.batch_idx} losses:")
             # Get loss names and values from the context
             loss_names = context.loss_logging_items_names
-            loss_values = context.loss_logging_items
+            loss_values = context.loss_log_items  # Changed from loss_logging_items to loss_log_items
             
             # Create loss dictionary by zipping names and values
             loss_dict = dict(zip(loss_names, loss_values))
