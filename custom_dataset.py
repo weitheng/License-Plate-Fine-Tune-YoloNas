@@ -3,6 +3,42 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import os
+from typing import List, Dict, Any
+
+def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Custom collate function to handle variable-sized tensors.
+    
+    Args:
+        batch: List of dictionaries containing image data and annotations
+        
+    Returns:
+        Dictionary with batched data
+    """
+    images = torch.stack([item['image'] for item in batch])
+    image_paths = [item['image_path'] for item in batch]
+    
+    # Handle boxes and labels
+    boxes = [item['boxes'] for item in batch]
+    class_labels = [item['class_labels'] for item in batch]
+    
+    # Create padded boxes tensor
+    max_boxes = max(box.shape[0] for box in boxes)
+    padded_boxes = torch.zeros((len(batch), max_boxes, 4), dtype=torch.float32)
+    padded_labels = torch.zeros((len(batch), max_boxes), dtype=torch.long)
+    
+    # Fill padded tensors
+    for idx, (box, label) in enumerate(zip(boxes, class_labels)):
+        if box.shape[0] > 0:  # Only if there are boxes
+            padded_boxes[idx, :box.shape[0]] = box
+            padded_labels[idx, :label.shape[0]] = label
+    
+    return {
+        'image': images,
+        'boxes': padded_boxes,
+        'class_labels': padded_labels,
+        'image_path': image_paths
+    }
 
 def clip_bbox(bbox):
     """Clip bounding box coordinates to be within [0, 1]"""

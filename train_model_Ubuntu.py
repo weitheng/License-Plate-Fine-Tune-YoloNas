@@ -27,7 +27,7 @@ from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
-from custom_dataset import AugmentedDetectionDataset
+from custom_dataset import AugmentedDetectionDataset, collate_fn
 from augmentation_config import get_training_augmentations, get_validation_augmentations
 from torch.utils.data import DataLoader
 
@@ -1263,14 +1263,15 @@ def get_dataloaders(combined_dir, dataset_config, hw_params, config):
         input_size=config.input_size
     )
     
-    # Create dataloaders
+    # Create dataloaders with custom collate function
     train_loader = DataLoader(
         train_dataset,
         batch_size=hw_params['batch_size'],
         num_workers=hw_params['num_workers'],
         shuffle=True,
         pin_memory=torch.cuda.is_available(),
-        drop_last=True
+        drop_last=True,
+        collate_fn=collate_fn
     )
     
     val_loader = DataLoader(
@@ -1279,7 +1280,8 @@ def get_dataloaders(combined_dir, dataset_config, hw_params, config):
         num_workers=hw_params['num_workers'],
         shuffle=False,
         pin_memory=torch.cuda.is_available(),
-        drop_last=False
+        drop_last=False,
+        collate_fn=collate_fn
     )
     
     return train_loader, val_loader
