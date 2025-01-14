@@ -118,7 +118,7 @@ def clip_bbox(bbox):
 
 def validate_boxes(boxes, labels, image_shape):
     """
-    Validate boxes after augmentation.
+    Validate boxes after augmentation with more lenient criteria.
     Returns filtered boxes and labels.
     """
     if len(boxes) == 0:
@@ -133,30 +133,27 @@ def validate_boxes(boxes, labels, image_shape):
         # Unpack box coordinates
         x_center, y_center, width, height = box
         
-        # Basic coordinate checks
-        if not (0 <= x_center <= 1 and 0 <= y_center <= 1 and 
-                0 < width <= 1 and 0 < height <= 1):
+        # More lenient coordinate checks
+        if not (0 <= x_center <= 1 and 0 <= y_center <= 1):
             continue
             
-        # Check if box dimensions are reasonable
-        if width < 0.01 or height < 0.01:  # Minimum 1% of image size
+        # More lenient size checks
+        if width <= 0 or height <= 0:  # Only filter completely invalid boxes
             continue
-        if width > 0.95 or height > 0.95:  # Maximum 95% of image size
+        if width > 1 or height > 1:  # Only filter boxes larger than image
             continue
             
-        # Check if box stays within image bounds
-        x_min = x_center - width/2
-        y_min = y_center - height/2
-        x_max = x_center + width/2
-        y_max = y_center + height/2
+        # Clip values to valid range instead of filtering
+        x_center = np.clip(x_center, 0.0, 1.0)
+        y_center = np.clip(y_center, 0.0, 1.0)
+        width = np.clip(width, 0.001, 1.0)
+        height = np.clip(height, 0.001, 1.0)
         
-        if x_min < 0 or y_min < 0 or x_max > 1 or y_max > 1:
-            continue
-            
-        valid_boxes.append(box)
+        # Add clipped box
+        valid_boxes.append([x_center, y_center, width, height])
         valid_labels.append(label)
     
-    return np.array(valid_boxes), np.array(valid_labels)
+    return np.array(valid_boxes, dtype=np.float32), np.array(valid_labels)
 
 class AugmentedDetectionDataset(Dataset):
     """

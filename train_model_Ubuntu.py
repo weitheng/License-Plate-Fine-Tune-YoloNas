@@ -1311,6 +1311,24 @@ def get_dataloaders(combined_dir, dataset_config, hw_params, config):
     
     return train_loader, val_loader
 
+def verify_trainer_setup(trainer, train_params):
+    """Verify trainer is properly configured before training"""
+    logger.info("Verifying trainer setup...")
+    
+    # Check essential components
+    if not hasattr(trainer, '_sg_trainer'):
+        logger.warning("Trainer missing _sg_trainer attribute")
+    
+    # Log training parameters
+    logger.info("Training parameters:")
+    for key, value in train_params.items():
+        if isinstance(value, (dict, list)):
+            logger.info(f"  {key}: {type(value)}")
+        else:
+            logger.info(f"  {key}: {value}")
+    
+    logger.success("✓ Trainer verification complete")
+
 def main():
     try:
         # Parse command line arguments
@@ -1505,19 +1523,39 @@ def main():
         # Update training parameters with absolute paths
         train_params = {
             'save_ckpt_after_epoch': True,
-            'save_ckpt_dir': os.path.abspath(checkpoint_dir),  # Ensure absolute path
+            'save_ckpt_dir': os.path.abspath(checkpoint_dir),
             'resume': False,
             'silent_mode': False,
             'average_best_models': True,
-            'warmup_mode': 'LinearEpochLRWarmup',
-            'warmup_initial_lr': 1e-6,
-            'lr_warmup_epochs': config.warmup_epochs,
-            'initial_lr': config.initial_lr,
+            
+            # Learning rate and scheduler parameters - consolidated from config
             'lr_mode': 'cosine',
+            'lr_warmup_epochs': config.warmup_epochs,
+            'warmup_initial_lr': config.initial_lr / 10,  # Start warmup from 1/10th of initial_lr
+            'initial_lr': config.initial_lr,
             'max_epochs': config.num_epochs,
+            'warmup_mode': 'linear',
+            
+            # Early stopping and optimization
             'early_stopping_patience': config.early_stopping_patience,
             'mixed_precision': torch.cuda.is_available(),
             'loss': loss_fn,
+            'optimizer': 'Adam',  # Specify optimizer explicitly
+            'optimizer_params': {
+                'weight_decay': config.weight_decay,
+                'betas': (0.9, 0.999)  # Default Adam betas
+            },
+            
+            # Scheduler configuration
+            'lr_scheduler_params': {
+                'mode': 'epoch',
+                'warmup_epochs': config.warmup_epochs,
+                'warmup_initial_lr': config.initial_lr / 10,
+                'warmup_mode': 'linear',
+                'cosine_final_lr_ratio': 0.1  # Final LR will be initial_lr * this value
+            },
+            
+            # Metrics and logging
             'valid_metrics_list': [
                 DetectionMetrics_050(
                     score_thres=config.confidence_threshold,
@@ -1533,6 +1571,9 @@ def main():
                 )
             ],
             'metric_to_watch': 'mAP@0.50',
+            'greater_metric_to_watch_is_better': True,  # Explicitly specify this
+            
+            # Logging configuration
             'sg_logger': 'wandb_sg_logger',
             'sg_logger_params': {
                 'save_checkpoints_remote': True,
@@ -1541,11 +1582,16 @@ def main():
                 'project_name': 'license-plate-detection',
                 'run_name': 'yolo-nas-s-coco-finetuning'
             },
+            
+            # Model parameters
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
+            
+            # Checkpoint handling
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
             'resume_strict_load': False,
-            'optimizer_params': {'weight_decay': config.weight_decay},
+            
+            # Callbacks
             'phase_callbacks': [
                 CheckpointLoggingCallback(),
                 LossDebugCallback(),
@@ -1600,6 +1646,9 @@ def main():
         if args.skip_lp_checks:
             logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
         
+        # Call it before training
+        verify_trainer_setup(trainer, train_params)
+        
         trainer.train(
             model=model,
             training_params=train_params,
@@ -1617,18 +1666,41 @@ def main():
             logger.info("Saving final model checkpoint...")
             final_checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'coco_license_plate_detection_final.pth'))
             
-            # Use trainer's _save_checkpoint method
-            trainer._save_checkpoint(
-                checkpoint_path=final_checkpoint_path,
-                net=model.state_dict(),
-                optimizer=trainer.optimizer.state_dict() if trainer.optimizer else None,
-                scheduler=trainer.scheduler.state_dict() if trainer.scheduler else None,
-                scaler=None,
-                epoch=trainer._epoch if hasattr(trainer, '_epoch') else trainer.max_epochs
-            )
+            # Get scheduler state dict if it exists
+            scheduler_state = None
+            if hasattr(trainer, '_sg_trainer'):
+                if hasattr(trainer._sg_trainer, 'scheduler'):
+                    scheduler_state = trainer._sg_trainer.scheduler.state_dict()
+                elif hasattr(trainer._sg_trainer, '_scheduler'):
+                    scheduler_state = trainer._sg_trainer._scheduler.state_dict()
+            
+            # Get optimizer state dict if it exists
+            optimizer_state = None
+            if hasattr(trainer, '_sg_trainer'):
+                if hasattr(trainer._sg_trainer, 'optimizer'):
+                    optimizer_state = trainer._sg_trainer.optimizer.state_dict()
+                elif hasattr(trainer._sg_trainer, '_optimizer'):
+                    optimizer_state = trainer._sg_trainer._optimizer.state_dict()
+            
+            checkpoint_data = {
+                'net': model.state_dict(),
+                'optimizer': optimizer_state,
+                'scheduler': scheduler_state,
+                'epoch': trainer._epoch if hasattr(trainer, '_epoch') else config.num_epochs,
+                'scaler': None,
+                'training_params': train_params,  # Save training parameters
+                'config': vars(config)  # Save configuration
+            }
+            
+            # Save checkpoint
+            torch.save(checkpoint_data, final_checkpoint_path)
             logger.success(f"✓ Final checkpoint saved to {final_checkpoint_path}")
+            
         except Exception as e:
             logger.error(f"Failed to save final checkpoint: {e}")
+            if hasattr(trainer, '_sg_trainer'):
+                logger.error(f"SG Trainer attributes: {dir(trainer._sg_trainer)}")
+            logger.error(f"Trainer attributes: {dir(trainer)}")
             raise
 
         # Generate complete label map file with absolute path

@@ -15,22 +15,25 @@ def get_training_augmentations(input_size):
         A.Compose: Augmentation pipeline
     """
     transform = A.Compose([
-        # First resize to maintain aspect ratio
+        # Basic resize with padding
         A.LongestMaxSize(max_size=max(input_size)),
-        # Then pad if necessary to get exact size
         A.PadIfNeeded(
             min_height=input_size[0],
             min_width=input_size[1],
             border_mode=cv2.BORDER_CONSTANT,
             value=0
         ),
-        # Reduce geometric transformations
+        
+        # Simple augmentations that preserve boxes better
+        A.HorizontalFlip(p=0.5),
+        
+        # Minimal geometric transforms
         A.OneOf([
             A.RandomResizedCrop(
                 height=input_size[0],
                 width=input_size[1],
-                scale=(0.9, 1.0),  # Less aggressive scale
-                ratio=(0.95, 1.05),  # Keep aspect ratio closer to original
+                scale=(0.95, 1.0),    # Very minimal scale change
+                ratio=(0.95, 1.05),    # Very minimal aspect ratio change
                 p=0.7
             ),
             A.Resize(
@@ -40,18 +43,7 @@ def get_training_augmentations(input_size):
             )
         ], p=1.0),
         
-        # Reduce geometric augmentations
-        A.HorizontalFlip(p=0.5),
-        A.ShiftScaleRotate(
-            shift_limit=0.0625,    # Reduced from 0.05
-            scale_limit=0.05,      # Reduced from 0.1
-            rotate_limit=5,        # Reduced from 15
-            border_mode=cv2.BORDER_CONSTANT,
-            value=0,
-            p=0.3
-        ),
-        
-        # Color adjustments (kept minimal)
+        # Basic color adjustments
         A.OneOf([
             A.RandomBrightnessContrast(
                 brightness_limit=(-0.1, 0.1),
@@ -70,7 +62,7 @@ def get_training_augmentations(input_size):
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.6,  # Increased from 0.4
+        min_visibility=0.3,  # Reduced from 0.6 to be more lenient
         label_fields=['class_labels']
     ))
     
@@ -94,30 +86,19 @@ def get_training_augmentations(input_size):
     return transform
 
 def get_validation_augmentations(input_size):
-    """
-    Get validation augmentations pipeline using Albumentations.
-    Only includes necessary preprocessing.
-    
-    Args:
-        input_size (tuple): Target input size (height, width)
-        
-    Returns:
-        A.Compose: Augmentation pipeline
-    """
+    """Get validation augmentations pipeline using Albumentations."""
     return A.Compose([
-        # First resize to maintain aspect ratio
         A.LongestMaxSize(max_size=max(input_size)),
-        # Then pad to get exact size
         A.PadIfNeeded(
             min_height=input_size[0],
             min_width=input_size[1],
             border_mode=cv2.BORDER_CONSTANT,
             value=0
         ),
-        A.ToFloat(max_value=255.0),  # Same normalization as training
+        A.ToFloat(max_value=255.0),
         ToTensorV2(),
     ], bbox_params=A.BboxParams(
         format='yolo',
-        min_visibility=0.6,  # Match training visibility threshold
+        min_visibility=0.3,  # Match training visibility threshold
         label_fields=['class_labels']
     )) 
