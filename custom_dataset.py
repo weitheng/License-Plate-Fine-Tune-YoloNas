@@ -239,10 +239,6 @@ class AugmentedDetectionDataset(Dataset):
         if len(boxes) != len(valid_boxes):
             print(f"Filtered {len(boxes) - len(valid_boxes)} invalid boxes in {img_path}")
         
-        # After loading boxes and labels
-        print(f"Number of boxes: {len(boxes)}")
-        print(f"Box coordinates sample: {boxes[:2] if len(boxes) > 0 else 'No boxes'}")
-        
         if DEBUG_MODE:
             # Only log problematic cases
             if len(boxes) == 0:
