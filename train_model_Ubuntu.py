@@ -1454,7 +1454,6 @@ def main():
             dfl_loss_weight=1.0,  # Add explicit DFL weight
             loss_weight={'class': 1.0, 'iou': 3.0, 'dfl': 1.0}  # Explicit loss weights
         )
-            num_classes=81,
 
         # Get GPU memory if available
         gpu_memory_gb = 0
