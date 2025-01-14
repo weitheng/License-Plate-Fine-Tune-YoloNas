@@ -1509,7 +1509,8 @@ def main():
             'label_smoothing': config.label_smoothing,
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
             'resume_strict_load': False,
-            'optimizer_params': {'weight_decay': config.weight_decay}
+            'optimizer_params': {'weight_decay': config.weight_decay},
+            'phase_callbacks': [CheckpointLoggingCallback()]
         }
 
         # Update dataloader params with absolute paths
@@ -1528,19 +1529,21 @@ def main():
         try:
             logger.info("Checking for existing checkpoints...")
             train_params = setup_checkpoint_resuming(checkpoint_dir, train_params, force_new=args.no_resume)
+            # Add phase callbacks to training parameters
+            train_params['phase_callbacks'] = [CheckpointLoggingCallback()]
         except Exception as e:
             logger.error(f"Error setting up checkpoint resuming: {e}")
             logger.warning("Starting training from scratch")
             train_params.update({
                 'resume': False,
-                'resume_path': None
+                'resume_path': None,
+                'phase_callbacks': [CheckpointLoggingCallback()]  # Add callbacks here too
             })
 
-        # Initialize trainer with explicit absolute paths
+        # Initialize trainer without phase_callbacks argument
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir),
-            phase_callbacks=[CheckpointLoggingCallback()]
+            ckpt_root_dir=os.path.abspath(checkpoint_dir)
         )
 
         # Validate dataset contents before training
