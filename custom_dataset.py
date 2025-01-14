@@ -6,7 +6,7 @@ import os
 from typing import List, Dict, Any, Tuple
 import logging
 
-DEBUG_MODE = False
+DEBUG_MODE = False  # Set to True only when debugging
 
 def verify_bbox_format(boxes: torch.Tensor) -> None:
     """Verify bounding box format and values"""
@@ -27,10 +27,9 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
         Tuple of (images, targets, metadata)
     """
     # Add debug logging
-    if DEBUG_MODE:
-        print(f"Batch size: {len(batch)}")
-        print(f"Sample targets shape: {batch[0][1]['boxes'].shape}")
-        print(f"Sample labels shape: {batch[0][1]['labels'].shape}")
+    print(f"Batch size: {len(batch)}")
+    print(f"Sample targets shape: {batch[0][1]['boxes'].shape}")
+    print(f"Sample labels shape: {batch[0][1]['labels'].shape}")
     
     images = torch.stack([item[0] for item in batch])
     
@@ -52,7 +51,8 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
             verify_bbox_format(boxes)
             batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
             # Ensure boxes are in correct format
-            print(f"Boxes for batch {batch_idx}: {boxes}")
+            if DEBUG_MODE:
+                print(f"Boxes for batch {batch_idx}: {boxes}")
             # Combine into YOLO format
             target_boxes = torch.cat([batch_col, labels.view(-1, 1), boxes], dim=1)
             all_targets.append(target_boxes)
