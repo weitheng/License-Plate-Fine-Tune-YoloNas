@@ -31,6 +31,14 @@ from custom_dataset import AugmentedDetectionDataset
 from augmentation_config import get_training_augmentations, get_validation_augmentations
 from torch.utils.data import DataLoader
 
+# Constants for dataset validation
+EXPECTED_LP_TRAIN = 25470
+EXPECTED_LP_VAL = 1073
+EXPECTED_COCO_TRAIN = 85000
+EXPECTED_COCO_VAL = 5000
+EXPECTED_TOTAL_TRAIN = EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN  # 85000 + 25470 = 110470
+EXPECTED_TOTAL_VAL = EXPECTED_COCO_VAL + EXPECTED_LP_VAL  # 5000 + 1073 = 6073
+
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
     # Format for both file and terminal
