@@ -61,45 +61,36 @@ def collate_fn(batch: List[Tuple]) -> Tuple:
         labels = target['labels']
         
         if len(boxes) > 0:
-            # Ensure boxes are valid
-            if torch.isnan(boxes).any() or torch.isinf(boxes).any():
-                continue
-                
-            # Ensure boxes are in correct format
+            # Convert to tensor if needed
             if not isinstance(boxes, torch.Tensor):
                 boxes = torch.tensor(boxes, dtype=torch.float32)
-            if boxes.dim() != 2 or boxes.shape[1] != 4:
-                continue
+            if not isinstance(labels, torch.Tensor):
+                labels = torch.tensor(labels, dtype=torch.float32)
+            
+            # Filter out invalid boxes
+            valid_mask = ((boxes >= 0) & (boxes <= 1)).all(dim=1)
+            valid_mask &= (boxes[:, 2:] > 0.001).all(dim=1)  # Minimum size check
+            
+            if valid_mask.any():
+                boxes = boxes[valid_mask]
+                labels = labels[valid_mask]
                 
-            # Clip boxes to valid range
-            boxes = torch.clamp(boxes, 0, 1)
-            
-            # Create batch index column
-            batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
-            
-            # Ensure labels are float
-            labels = labels.float() if isinstance(labels, torch.Tensor) else torch.tensor(labels, dtype=torch.float32)
-            
-            # Combine batch index, labels, and boxes
-            target_boxes = torch.cat([
-                batch_col,
-                labels.view(-1, 1),
-                boxes
-            ], dim=1)
-            
-            all_targets.append(target_boxes)
+                # Create batch index column
+                batch_col = torch.full((len(boxes), 1), batch_idx, dtype=torch.float32)
+                
+                # Combine batch index, labels, and boxes
+                target_boxes = torch.cat([
+                    batch_col,
+                    labels.view(-1, 1),
+                    boxes
+                ], dim=1)
+                
+                all_targets.append(target_boxes)
     
     if all_targets:
         targets = torch.cat(all_targets, dim=0)
     else:
         targets = torch.zeros((0, 6), dtype=torch.float32)
-    
-    # Ensure targets has correct shape and no invalid values
-    if len(targets) > 0:
-        assert targets.shape[1] == 6, f"Invalid target shape: {targets.shape}"
-        assert not torch.isnan(targets).any(), "NaN values in targets"
-        assert not torch.isinf(targets).any(), "Inf values in targets"
-        assert (targets[:, 2:] >= 0).all() and (targets[:, 2:] <= 1).all(), "Box coordinates out of range"
     
     metadata = {
         'image_paths': [item[2]['image_path'] for item in batch]
@@ -150,6 +141,7 @@ def validate_boxes(boxes, labels, image_shape):
     valid_labels = []
     
     img_height, img_width = image_shape[:2]
+    min_dim = 0.001  # Minimum allowed dimension
     
     for box, label in zip(boxes, labels):
         # Unpack box coordinates
@@ -159,46 +151,39 @@ def validate_boxes(boxes, labels, image_shape):
         if any(np.isnan(box)) or any(np.isinf(box)):
             continue
             
-        # Ensure positive dimensions
-        if width <= 0 or height <= 0:
+        # Ensure positive dimensions with minimum size
+        if width < min_dim or height < min_dim:
             continue
             
         # Clip dimensions to valid range
-        width = np.clip(width, 0, 1)
-        height = np.clip(height, 0, 1)
+        width = np.clip(width, min_dim, 1.0)
+        height = np.clip(height, min_dim, 1.0)
         
-        # Clip centers to image
-        x_center = np.clip(x_center, width/2, 1 - width/2)
-        y_center = np.clip(y_center, height/2, 1 - height/2)
-        
-        # Calculate box boundaries
+        # Adjust centers to keep box within bounds
         x_min = x_center - width/2
         y_min = y_center - height/2
         x_max = x_center + width/2
         y_max = y_center + height/2
         
-        # Ensure box is within bounds
+        # Adjust centers if box extends beyond boundaries
         if x_min < 0:
-            x_center += abs(x_min)
+            x_center = width/2
         if y_min < 0:
-            y_center += abs(y_min)
+            y_center = height/2
         if x_max > 1:
-            x_center -= (x_max - 1)
+            x_center = 1 - width/2
         if y_max > 1:
-            y_center -= (y_max - 1)
+            y_center = 1 - height/2
             
         # Final validation
-        if 0 <= x_center <= 1 and 0 <= y_center <= 1 and width > 0 and height > 0:
+        if 0 <= x_center <= 1 and 0 <= y_center <= 1:
             valid_boxes.append([x_center, y_center, width, height])
             valid_labels.append(label)
     
     if len(valid_boxes) == 0:
         return np.array([], dtype=np.float32).reshape(0, 4), np.array([], dtype=np.int64)
     
-    valid_boxes = np.array(valid_boxes, dtype=np.float32)
-    valid_labels = np.array(valid_labels, dtype=np.int64)
-    
-    return valid_boxes, valid_labels
+    return np.array(valid_boxes, dtype=np.float32), np.array(valid_labels, dtype=np.int64)
 
 class AugmentedDetectionDataset(Dataset):
     """
@@ -214,7 +199,7 @@ class AugmentedDetectionDataset(Dataset):
         # Adjusted thresholds to reduce warnings
         self.MAX_BOXES_WARNING = 150     # Increased from 100
         self.MAX_IMAGE_DIM = 4096       # Increased from 2048
-        self.MIN_BOX_WARNING = 0.5      # Reduced from 1
+        self.MIN_BOX_WARNING = 0.001    # Reduced from 0.5 to be less strict
         
         # Only warn about significant box losses
         self.BOX_LOSS_WARNING_THRESHOLD = 10  # Only warn if we lose more than 10 boxes
@@ -222,6 +207,9 @@ class AugmentedDetectionDataset(Dataset):
         # Get list of image files
         self.image_files = [f for f in os.listdir(self.images_dir) 
                            if f.endswith(('.jpg', '.jpeg', '.png'))]
+        
+        # Add minimum box dimensions
+        self.MIN_BOX_DIM = 0.001        # Minimum allowed box dimension
         
     def __len__(self):
         return len(self.image_files)

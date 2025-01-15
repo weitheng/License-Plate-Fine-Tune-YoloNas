@@ -84,3 +84,45 @@ nc: 81  # 80 COCO classes + 1 license plate class
 train: images/train  # Path to training images
 val: images/val      # Path to validation images
 test: images/test    # Path to test images
+
+# Add augmentation configurations
+augmentation:
+  train:
+    resize:
+      min_size: 640
+      max_size: 640
+      preserve_aspect_ratio: true
+    color:
+      brightness_limit: [-0.1, 0.1]
+      contrast_limit: [-0.1, 0.1]
+      hue_shift_limit: 5
+      sat_shift_limit: 10
+      val_shift_limit: 10
+      p: 0.3
+    geometric:
+      horizontal_flip: true
+      vertical_flip: false
+      rotate_limit: 0
+      scale_limit: [-0.1, 0.1]
+      p: 0.3
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+    bbox_params:
+      format: yolo
+      min_visibility: 0.3
+      min_size: 0.001
+      max_aspect_ratio: 20.0
+
+  val:
+    resize:
+      min_size: 640
+      max_size: 640
+      preserve_aspect_ratio: true
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+    bbox_params:
+      format: yolo
+      min_visibility: 0.3
+      min_size: 0.001

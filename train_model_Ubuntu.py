@@ -28,8 +28,9 @@ import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
 from custom_dataset import AugmentedDetectionDataset, collate_fn
-from augmentation_config import get_training_augmentations, get_validation_augmentations
+from augmentation_config import get_training_augmentations, get_validation_augmentations, load_augmentation_config
 from torch.utils.data import DataLoader
+import yaml
 
 # Constants for dataset validation
 EXPECTED_LP_TRAIN = 25470
@@ -1285,10 +1286,19 @@ class LossComponentCallback(PhaseCallback):
                 logger.warning(f"Zero values detected in losses: {zero_losses}")
                 logger.info(f"Current loss values: {loss_dict}")
 
-def get_dataloaders(combined_dir, dataset_config, hw_params, config):
+def get_dataloaders(combined_dir, hw_params, config):
     """Initialize dataloaders with augmentations"""
+    # Load license plate config
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    yaml_path = os.path.join(current_dir, 'license_plate_dataset.yaml')
+    
+    with open(yaml_path, 'r') as f:
+        dataset_config = yaml.safe_load(f)
+    
+    aug_config = dataset_config.get('augmentation', {})
+    
     # Training dataset with augmentations
-    train_transforms = get_training_augmentations(config.input_size)
+    train_transforms = get_training_augmentations(config.input_size, aug_config)
     train_dataset = AugmentedDetectionDataset(
         data_dir=combined_dir,
         images_dir='images/train',
@@ -1298,7 +1308,7 @@ def get_dataloaders(combined_dir, dataset_config, hw_params, config):
     )
     
     # Validation dataset with basic transforms
-    val_transforms = get_validation_augmentations(config.input_size)
+    val_transforms = get_validation_augmentations(config.input_size, aug_config)
     val_dataset = AugmentedDetectionDataset(
         data_dir=combined_dir,
         images_dir='images/val',
@@ -1307,11 +1317,15 @@ def get_dataloaders(combined_dir, dataset_config, hw_params, config):
         input_size=config.input_size
     )
     
-    # Create dataloaders with custom collate function
+    # Get dataloader params from config
+    batch_size = hw_params.get('batch_size', dataset_config.get('dataloader', {}).get('batch_size', 16))
+    num_workers = hw_params.get('num_workers', dataset_config.get('dataloader', {}).get('num_workers', 4))
+    
+    # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=hw_params['batch_size'],
-        num_workers=hw_params['num_workers'],
+        batch_size=batch_size,
+        num_workers=num_workers,
         shuffle=True,
         pin_memory=torch.cuda.is_available(),
         drop_last=True,
@@ -1320,8 +1334,8 @@ def get_dataloaders(combined_dir, dataset_config, hw_params, config):
     
     val_loader = DataLoader(
         val_dataset,
-        batch_size=hw_params['batch_size'],
-        num_workers=hw_params['num_workers'],
+        batch_size=batch_size,
+        num_workers=num_workers,
         shuffle=False,
         pin_memory=torch.cuda.is_available(),
         drop_last=False,
@@ -1524,11 +1538,16 @@ def main():
         
         # Define loss function with only the supported parameters
         loss_fn = PPYoloELoss(
-            num_classes=81,           # Number of classes
-            reg_max=16,              # Maximum value for bbox regression
-            use_static_assigner=True, # Whether to use static assigner
-            iou_loss_weight=5.0,     # Weight for IoU loss
-            dfl_loss_weight=2.0      # Weight for DFL loss
+            num_classes=81,           
+            reg_max=16,              
+            use_static_assigner=True, 
+            iou_loss_weight=2.5,     # Adjusted from 5.0
+            dfl_loss_weight=0.5,     # Adjusted from 2.0
+            loss_weight={            # Add explicit loss weights
+                'loss_cls': 1.0,
+                'loss_dfl': 0.5,
+                'loss_iou': 2.5
+            }
         )
 
         # Get GPU memory if available
@@ -1612,7 +1631,7 @@ def main():
         }
 
         # Update dataloader params with absolute paths
-        train_data, val_data = get_dataloaders(combined_dir, dataset_config, hw_params, config)
+        train_data, val_data = get_dataloaders(combined_dir, hw_params, config)
 
         # Check for existing checkpoint
         checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'latest_checkpoint.pth'))
