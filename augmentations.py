@@ -209,11 +209,34 @@ class DebugTransform(DetectionTransform):
             return sample_dict
 
 class DetectionHSV(DetectionTransform):
+    def __init__(self, hgain=0.015, sgain=0.7, vgain=0.4):
+        super().__init__()
+        self.hgain = hgain
+        self.sgain = sgain
+        self.vgain = vgain
+
     def __call__(self, sample_dict):
-        image = sample_dict['image']
-        image = ensure_rgb_format(image)  # Ensure correct format before HSV transform
-        sample_dict['image'] = image
-        return super().__call__(sample_dict)
+        try:
+            image = sample_dict['image']
+            image = ensure_rgb_format(image)  # Ensure correct format before HSV transform
+            
+            # Convert to HSV
+            hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+            
+            # Random gains
+            r = np.random.uniform(-1, 1, 3) * [self.hgain, self.sgain, self.vgain] + 1
+            
+            # Apply gains
+            hsv = hsv * r
+            
+            # Clip and convert back to RGB
+            hsv = np.clip(hsv, 0, 255).astype(np.uint8)
+            sample_dict['image'] = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+            
+            return sample_dict
+        except Exception as e:
+            logger.error(f"Error in HSV transform: {e}")
+            return sample_dict
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
@@ -247,11 +270,9 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             input_format='XYXY_LABEL',
             output_format='LABEL_XYXY'
         ))
-        transforms.append(DetectionHSV(
-            hgain=aug_config['hsv'].get('hgain', 0.015),
-            sgain=aug_config['hsv'].get('sgain', 0.3),
-            vgain=aug_config['hsv'].get('vgain', 0.2)
-        ))
+        # Use the SuperGradients DetectionHSV directly
+        from super_gradients.training.transforms.transforms import DetectionHSV as SGDetectionHSV
+        transforms.append(SGDetectionHSV())  # Use default parameters
         transforms.append(DetectionTargetsFormatTransform(
             input_format='LABEL_XYXY',
             output_format='XYXY_LABEL'
