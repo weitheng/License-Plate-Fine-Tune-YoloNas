@@ -182,24 +182,39 @@ class DetectionMotionBlur(DetectionTransform):
         self.angle = angle
         self.prob = prob
         self._kernel_cache = {}  # Cache for kernels
+    
     def apply_motion_blur(self, image):
-        # Add random angle variation for more realistic motion
-        actual_angle = self.angle + random.uniform(-15, 15) if self.angle != 0 else 0
-        kernel = np.zeros((self.kernel_size, self.kernel_size))
-        center = self.kernel_size // 2
-        
-        # Create motion blur kernel with intensity variation
-        intensity = random.uniform(0.8, 1.0)
-        kernel[center, :] = intensity / self.kernel_size
-        
-        if actual_angle != 0:
-            kernel = cv2.warpAffine(
-                kernel, 
-                cv2.getRotationMatrix2D((center, center), actual_angle, 1.0), 
-                (self.kernel_size, self.kernel_size)
-            )
-        
-        return cv2.filter2D(image.astype(np.float32), -1, kernel).astype(np.uint8)
+        try:
+            # Ensure image is in correct format
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            
+            # Ensure HWC format
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Add random angle variation for more realistic motion
+            actual_angle = self.angle + random.uniform(-15, 15) if self.angle != 0 else 0
+            kernel = np.zeros((self.kernel_size, self.kernel_size))
+            center = self.kernel_size // 2
+            
+            # Create motion blur kernel with intensity variation
+            intensity = random.uniform(0.8, 1.0)
+            kernel[center, :] = intensity / self.kernel_size
+            
+            if actual_angle != 0:
+                kernel = cv2.warpAffine(
+                    kernel, 
+                    cv2.getRotationMatrix2D((center, center), actual_angle, 1.0), 
+                    (self.kernel_size, self.kernel_size)
+                )
+            
+            blurred = cv2.filter2D(image, -1, kernel)
+            return blurred.astype(np.uint8)
+            
+        except Exception as e:
+            logger.error(f"Error in motion blur application: {str(e)}")
+            return image
 
     def apply_to_sample(self, sample):
         try:
@@ -241,28 +256,54 @@ class DetectionWeatherEffects(DetectionTransform):
         self.prob = prob
 
     def add_rain(self, image):
-        h, w = image.shape[:2]
-        rain_drops = np.random.random((h, w)) < self.rain_intensity
-        streak_length = random.randint(10, 20)
-        angle = random.uniform(-20, -10)  # Typical rain angle
-        
-        rain_layer = np.zeros_like(rain_drops)
-        for i in range(streak_length):
-            shifted = np.roll(rain_drops, i)
-            rain_layer = rain_layer | ndimage.rotate(shifted, angle, reshape=False)
-        
-        brightness = np.random.uniform(0.8, 1.2)
-        rain_effect = image.copy()
-        rain_effect[rain_layer] = np.minimum(
-            rain_effect[rain_layer] * brightness, 
-            255
-        )
-        
-        return cv2.GaussianBlur(rain_effect, (3, 3), 0)
+        try:
+            # Ensure image is in correct format
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            
+            # Ensure HWC format
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                image = np.transpose(image, (1, 2, 0))
+            
+            h, w = image.shape[:2]
+            rain_drops = np.random.random((h, w)) < self.rain_intensity
+            streak_length = random.randint(10, 20)
+            angle = random.uniform(-20, -10)  # Typical rain angle
+            
+            rain_layer = np.zeros((h, w), dtype=bool)
+            for i in range(streak_length):
+                shifted = np.roll(rain_drops, i)
+                rain_layer |= ndimage.rotate(shifted, angle, reshape=False) > 0.5
+            
+            brightness = np.random.uniform(0.8, 1.2)
+            rain_effect = image.copy()
+            rain_effect[rain_layer] = np.minimum(
+                rain_effect[rain_layer] * brightness, 
+                255
+            ).astype(np.uint8)
+            
+            return cv2.GaussianBlur(rain_effect, (3, 3), 0)
+            
+        except Exception as e:
+            logger.error(f"Error in rain effect application: {str(e)}")
+            return image
 
     def add_fog(self, image):
-        fog = np.ones_like(image) * 255
-        return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
+        try:
+            # Ensure image is in correct format
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            
+            # Ensure HWC format
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                image = np.transpose(image, (1, 2, 0))
+            
+            fog = np.ones_like(image) * 255
+            return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
+            
+        except Exception as e:
+            logger.error(f"Error in fog effect application: {str(e)}")
+            return image
 
     def apply_to_sample(self, sample):
         try:
