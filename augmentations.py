@@ -56,18 +56,21 @@ class DetectionMotionBlur(DetectionTransform):
         self.kernel_size = kernel_size
         self.angle = angle
         self.prob = prob
-        self._kernel_cache = {}  # Cache for kernels
 
     def apply_motion_blur(self, image):
-        # Ensure image is RGB
+        # Validate and ensure correct format
+        image = validate_image(image, "MotionBlur")
+        
+        # Ensure image is uint8 RGB
+        if image.dtype != np.uint8:
+            image = (image * 255).clip(0, 255).astype(np.uint8)
         image = ensure_rgb_format(image)
         
-        # Add random angle variation for more realistic motion
+        # Add random angle variation
         actual_angle = self.angle + random.uniform(-15, 15) if self.angle != 0 else 0
         kernel = np.zeros((self.kernel_size, self.kernel_size))
         center = self.kernel_size // 2
         
-        # Create motion blur kernel with intensity variation
         intensity = random.uniform(0.8, 1.0)
         kernel[center, :] = intensity / self.kernel_size
         
@@ -78,28 +81,17 @@ class DetectionMotionBlur(DetectionTransform):
                 (self.kernel_size, self.kernel_size)
             )
         
-        # Apply blur to each channel separately
-        result = np.zeros_like(image)
-        for i in range(3):
-            result[:,:,i] = cv2.filter2D(image[:,:,i].astype(np.float32), -1, kernel).astype(np.uint8)
-        return result
+        result = cv2.filter2D(image, -1, kernel)
+        return result.astype(np.uint8)
 
     def __call__(self, sample_dict):
         try:
-            image = sample_dict['image']
-            logger.debug(f"MotionBlur input shape: {image.shape}")
-            validate_image(image, "MotionBlur")
             if random.random() < self.prob:
-                sample_dict['image'] = self.apply_motion_blur(image)
-            logger.debug(f"MotionBlur output shape: {sample_dict['image'].shape}")
+                sample_dict['image'] = self.apply_motion_blur(sample_dict['image'])
             return sample_dict
         except Exception as e:
             logger.error(f"Error in MotionBlur: {e}")
             return sample_dict
-
-    def __del__(self):
-        if hasattr(self, 'kernel'):
-            del self.kernel
 
 class DetectionNoise(DetectionTransform):
     """Add random noise to simulate low-light conditions"""
@@ -110,24 +102,23 @@ class DetectionNoise(DetectionTransform):
         self.prob = prob
 
     def add_noise(self, image):
-        noise = np.random.normal(self.mean, self.std, image.shape)
+        # Validate and ensure correct format
+        image = validate_image(image, "Noise")
+        
+        # Convert to float32 for noise addition
+        image = image.astype(np.float32)
+        noise = np.random.normal(self.mean, self.std * 255, image.shape)
         noisy_image = image + noise
         return np.clip(noisy_image, 0, 255).astype(np.uint8)
 
     def __call__(self, sample_dict):
         try:
-            image = sample_dict['image']
-            validate_image(image, "Noise")
             if random.random() < self.prob:
-                sample_dict['image'] = self.add_noise(image)
+                sample_dict['image'] = self.add_noise(sample_dict['image'])
             return sample_dict
         except Exception as e:
             logger.error(f"Error in Noise: {e}")
             return sample_dict
-
-    def __del__(self):
-        if hasattr(self, 'noise'):
-            del self.noise
 
 class DetectionWeatherEffects(DetectionTransform):
     """Add weather effects like rain and fog"""
@@ -138,45 +129,46 @@ class DetectionWeatherEffects(DetectionTransform):
         self.prob = prob
 
     def add_rain(self, image):
-        h, w = image.shape[:2]
-        # Ensure image is RGB
+        # Validate and ensure correct format
+        image = validate_image(image, "WeatherEffects-Rain")
         image = ensure_rgb_format(image)
         
-        # Create rain streaks (3 channels)
+        h, w = image.shape[:2]
         rain_drops = np.random.random((h, w)) < self.rain_intensity
-        rain_drops = np.stack([rain_drops] * 3, axis=-1)  # Make 3-channel
+        rain_drops = np.stack([rain_drops] * 3, axis=-1)
+        
+        # Create rain streaks
+        rain_layer = np.zeros_like(rain_drops, dtype=np.uint8)
         streak_length = random.randint(10, 20)
         angle = random.uniform(-20, -10)
         
-        # Create rain streak effect
-        rain_layer = np.zeros_like(rain_drops)
         for i in range(streak_length):
             shifted = np.roll(rain_drops, i)
             rotated = ndimage.rotate(shifted, angle, reshape=False)
-            rain_layer = rain_layer | rotated
+            rain_layer = rain_layer | rotated.astype(np.uint8)
         
-        # Add brightness variation
-        brightness = np.random.uniform(0.8, 1.2)
+        # Add rain effect
         rain_effect = image.copy()
-        rain_effect[rain_layer] = np.minimum(
-            rain_effect[rain_layer] * brightness, 
+        brightness = np.random.uniform(0.8, 1.2)
+        rain_effect[rain_layer.astype(bool)] = np.minimum(
+            rain_effect[rain_layer.astype(bool)] * brightness, 
             255
-        )
+        ).astype(np.uint8)
         
         return cv2.GaussianBlur(rain_effect, (3, 3), 0)
 
     def add_fog(self, image):
-        # Ensure image is RGB
+        # Validate and ensure correct format
+        image = validate_image(image, "WeatherEffects-Fog")
         image = ensure_rgb_format(image)
+        
         fog = np.ones_like(image) * 255
         return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
 
     def __call__(self, sample_dict):
         try:
-            image = sample_dict['image']
-            logger.debug(f"WeatherEffects input shape: {image.shape}")
-            validate_image(image, "WeatherEffects")
             if random.random() < self.prob:
+                image = sample_dict['image']
                 effect = random.choice(['rain', 'fog'])
                 if effect == 'rain':
                     sample_dict['image'] = self.add_rain(image)
@@ -187,10 +179,6 @@ class DetectionWeatherEffects(DetectionTransform):
         except Exception as e:
             logger.error(f"Error in WeatherEffects: {e}")
             return sample_dict
-
-    def __del__(self):
-        if hasattr(self, 'rain_effect'):
-            del self.rain_effect
 
 class DebugTransform(DetectionTransform):
     """Debug transform to log image properties"""
@@ -259,13 +247,33 @@ class TypeDebugTransform(DetectionTransform):
 
 # Add this new class
 class DetectionUint8Convert(DetectionTransform):
-    """Convert image to uint8 format"""
+    """Convert image to uint8 format and ensure correct channel format"""
     def __init__(self):
         super().__init__()
 
     def __call__(self, sample_dict):
         image = sample_dict['image']
-        sample_dict['image'] = (image * 255).clip(0, 255).astype(np.uint8)
+        
+        # Check if image needs to be transposed
+        if len(image.shape) == 3 and image.shape[2] > 4:
+            # Image likely has channels in wrong dimension
+            image = np.transpose(image, (1, 2, 0))
+        
+        # Ensure image is in correct format (H, W, C)
+        if len(image.shape) == 2:
+            image = np.expand_dims(image, axis=-1)
+        
+        # Convert to RGB if needed
+        if image.shape[-1] == 1:
+            image = np.repeat(image, 3, axis=-1)
+        elif image.shape[-1] > 3:
+            image = image[:, :, :3]
+            
+        # Convert to uint8
+        if image.dtype != np.uint8:
+            image = (image * 255).clip(0, 255).astype(np.uint8)
+            
+        sample_dict['image'] = image
         return sample_dict
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
@@ -279,15 +287,15 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     # Add debug transform at the start
     transforms.append(DebugTransform("Initial"))
     
+    # Add proper format conversion before rescale
+    transforms.append(DetectionUint8Convert())
+    
     # Add rescale transform
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
     logger.info(f"  - Padded rescale to {input_size}")
-    
-    # Replace lambda with proper transform class
-    transforms.append(DetectionUint8Convert())
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
@@ -395,6 +403,11 @@ def validate_image(image, transform_name="Unknown"):
     if not isinstance(image, np.ndarray):
         raise ValueError(f"{transform_name}: Image must be a numpy array, got {type(image)}")
     
+    # Check if dimensions need to be transposed
+    if len(image.shape) == 3 and image.shape[2] > 4:
+        logger.warning(f"{transform_name}: Image has {image.shape[2]} channels, attempting to transpose")
+        image = np.transpose(image, (1, 2, 0))
+    
     # Convert float32 images to uint8 if needed
     if image.dtype == np.float32:
         if image.max() <= 1.0:
@@ -406,12 +419,11 @@ def validate_image(image, transform_name="Unknown"):
         raise ValueError(f"{transform_name}: Image must be 2D or 3D array, got shape {image.shape}")
     if image.shape[0] <= 0 or image.shape[1] <= 0:
         raise ValueError(f"{transform_name}: Image has invalid dimensions: {image.shape}")
-    if len(image.shape) == 3 and image.shape[2] not in [1, 3, 4]:
-        logger.warning(f"{transform_name}: Unusual number of channels: {image.shape[2]}. Expected 1, 3, or 4.")
     
-    # Add more detailed dimension logging
-    logger.debug(f"{transform_name}: Image dimensions - Height: {image.shape[0]}, Width: {image.shape[1]}, " + 
-                f"Channels: {image.shape[2] if len(image.shape) > 2 else 1}")
+    # Ensure proper channel format
+    if len(image.shape) == 3 and image.shape[2] > 3:
+        logger.warning(f"{transform_name}: Truncating to first 3 channels, original shape: {image.shape}")
+        image = image[:, :, :3]
     
     return image
 
