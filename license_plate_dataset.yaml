@@ -91,7 +91,7 @@ augmentation:
     enabled: true
     p: 0.5
   hsv:
-    enabled: false
+    enabled: true
     p: 0.5
     hgain: 0.015
     sgain: 0.7

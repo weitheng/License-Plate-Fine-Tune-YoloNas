@@ -34,7 +34,15 @@ def check_image(img: np.ndarray, stage: str) -> np.ndarray:
     if img is None:
         logger.error(f"{stage}: Image is None")
         raise ValueError(f"{stage}: Image is None")
-        
+    
+    # Log the current shape for debugging
+    logger.debug(f"{stage}: Image shape before check: {img.shape}")
+    
+    # Check if dimensions are transposed (channels last should be 3)
+    if len(img.shape) == 3 and img.shape[0] == 3:
+        logger.warning(f"{stage}: Image appears to be in channels-first format, transposing")
+        img = np.transpose(img, (1, 2, 0))
+    
     if len(img.shape) != 3:
         logger.warning(f"{stage}: Image has unexpected shape {img.shape}")
         if len(img.shape) == 2:
@@ -44,8 +52,23 @@ def check_image(img: np.ndarray, stage: str) -> np.ndarray:
         logger.warning(f"{stage}: Image has {img.shape[2]} channels, attempting to fix")
         if img.shape[2] > 3:
             img = img[:, :, :3]
-        
-    return img.astype(np.uint8)
+    
+    # Ensure the image is in uint8 format
+    if img.dtype != np.uint8:
+        img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
+    
+    logger.debug(f"{stage}: Image shape after check: {img.shape}")
+    return img
+
+class ImageShapeCorrection(DetectionTransform):
+    """Transform to ensure correct image shape and format"""
+    def __init__(self):
+        super().__init__()
+    
+    def apply_to_sample(self, sample):
+        image = sample.image
+        sample.image = check_image(image, "Shape-Correction")
+        return sample
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
@@ -55,7 +78,11 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     logger.info("Setting up training augmentations:")
     
-    # Add padded rescale as first transform
+    # Add shape correction as first transform
+    transforms.append(ImageShapeCorrection())
+    logger.info("  - Added image shape correction")
+    
+    # Add padded rescale
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
@@ -107,10 +134,11 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
     """Create validation transforms."""
     logger.info("Setting up validation transforms:")
     transforms = [
+        ImageShapeCorrection(),
         DetectionPaddedRescale(input_dim=input_size, pad_value=114),
         DetectionStandardize(max_value=255.0)
     ]
-    logger.info("  - Added rescale and standardization")
+    logger.info("  - Added shape correction, rescale and standardization")
     return transforms
 
 def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> List[DetectionTransform]:
