@@ -1,9 +1,11 @@
 from super_gradients.training.transforms import (
     DetectionTransform,
+    Normalize,
+    ComposeDetectionTransforms
+)
+from super_gradients.training.transforms.transforms import (
     Resize,
     HorizontalFlip,
-    Normalize,
-    ComposeDetectionTransforms,
     RandomBrightnessContrast,
     RandomBlur
 )
