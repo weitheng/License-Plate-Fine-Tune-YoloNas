@@ -103,17 +103,17 @@ augmentation:
     scales: 0.1
     shear: 3.0      # Reduced shear
   motion_blur:
-    enabled: true
+    enabled: false
     p: 0.2          # Reduced probability
     kernel_size: 7
     angle: 0.0
   weather:
-    enabled: true
+    enabled: false
     p: 0.2          # Reduced probability
     rain_intensity: 0.2
     fog_coef: 0.1
   noise:
-    enabled: true
+    enabled: false
     p: 0.3
     mean: 0.0
     std: 0.1          # Controls noise intensity

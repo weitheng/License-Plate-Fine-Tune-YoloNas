@@ -289,12 +289,14 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     # Add proper format conversion before rescale
     transforms.append(DetectionUint8Convert())
+    transforms.append(DebugTransform("Post-Convert"))
     
     # Add rescale transform
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
+    transforms.append(DebugTransform("Post-Rescale"))
     logger.info(f"  - Padded rescale to {input_size}")
     
     # Basic augmentations based on config
@@ -334,8 +336,9 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         logger.info("  - Mosaic augmentation")
 
     # Add affine transformation with additional checks
-    transforms.append(DebugTransform("Pre-Affine"))
     if aug_config.get('affine', {}).get('enabled', False):
+        transforms.append(DebugTransform("Pre-Affine"))
+        transforms.append(DetectionUint8Convert())  # Ensure proper format before affine
         transforms.append(DetectionRandomAffine(
             degrees=aug_config['affine'].get('degrees', 5.0),
             scales=aug_config['affine'].get('scales', 0.1),
@@ -343,7 +346,8 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             target_size=input_size,
             border_value=114  # Explicitly set border value
         ))
-    transforms.append(DebugTransform("Post-Affine"))
+        transforms.append(DebugTransform("Post-Affine"))
+        logger.info("  - Affine transformation")
     
     # Add custom augmentations with reduced probability
     if aug_config.get('motion_blur', {}).get('enabled', False):
@@ -403,10 +407,16 @@ def validate_image(image, transform_name="Unknown"):
     if not isinstance(image, np.ndarray):
         raise ValueError(f"{transform_name}: Image must be a numpy array, got {type(image)}")
     
+    logger.debug(f"{transform_name}: Input image shape: {image.shape}, dtype: {image.dtype}")
+    
     # Check if dimensions need to be transposed
     if len(image.shape) == 3 and image.shape[2] > 4:
         logger.warning(f"{transform_name}: Image has {image.shape[2]} channels, attempting to transpose")
-        image = np.transpose(image, (1, 2, 0))
+        if image.shape[0] == 3:  # Likely (C, H, W) format
+            image = np.transpose(image, (1, 2, 0))
+        else:  # Try standard transpose
+            image = np.transpose(image, (1, 0, 2))
+        logger.debug(f"{transform_name}: After transpose shape: {image.shape}")
     
     # Convert float32 images to uint8 if needed
     if image.dtype == np.float32:
@@ -414,6 +424,7 @@ def validate_image(image, transform_name="Unknown"):
             image = (image * 255).clip(0, 255).astype(np.uint8)
         else:
             image = image.clip(0, 255).astype(np.uint8)
+        logger.debug(f"{transform_name}: Converted to uint8, new shape: {image.shape}")
     
     if len(image.shape) not in [2, 3]:
         raise ValueError(f"{transform_name}: Image must be 2D or 3D array, got shape {image.shape}")
@@ -424,6 +435,7 @@ def validate_image(image, transform_name="Unknown"):
     if len(image.shape) == 3 and image.shape[2] > 3:
         logger.warning(f"{transform_name}: Truncating to first 3 channels, original shape: {image.shape}")
         image = image[:, :, :3]
+        logger.debug(f"{transform_name}: After channel truncation shape: {image.shape}")
     
     return image
 
