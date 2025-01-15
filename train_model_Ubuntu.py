@@ -1213,65 +1213,6 @@ def validate_image_paths(data_dir: str) -> None:
         
         logger.success(f"✓ All {len(image_files)} images in {split} split are valid and readable")
 
-def visualize_sample_augmentations(dataset_dir: str, config: Dict[str, Any], 
-                                 input_size: Tuple[int, int], experiment_name: str,
-                                 num_samples: int = 10):
-    """
-    Visualize sample augmentations for debugging.
-    Limited to num_samples images to prevent disk space issues.
-    """
-    try:
-        # Setup visualization directory with experiment name
-        vis_dir = setup_visualization_dir(os.path.dirname(dataset_dir), experiment_name)
-        
-        # Get training transforms
-        transform = get_transforms(config, input_size, is_training=True)
-        
-        # Get some sample images and their annotations
-        train_img_dir = os.path.join(dataset_dir, 'images', 'train')
-        train_label_dir = os.path.join(dataset_dir, 'labels', 'train')
-        
-        # Get random samples (limited to num_samples)
-        img_files = [f for f in os.listdir(train_img_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
-        num_samples = min(num_samples, len(img_files))  # Make sure we don't exceed available images
-        samples = random.sample(img_files, num_samples)
-        
-        logger.info(f"Generating {num_samples} augmentation visualizations...")
-        
-        for i, img_file in enumerate(samples):
-            # Load image
-            img_path = os.path.join(train_img_dir, img_file)
-            image = cv2.imread(img_path)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            
-            # Load corresponding label
-            label_file = os.path.splitext(img_file)[0] + '.txt'
-            label_path = os.path.join(train_label_dir, label_file)
-            
-            bboxes = []
-            class_labels = []
-            
-            if os.path.exists(label_path):
-                with open(label_path, 'r') as f:
-                    for line in f:
-                        class_id, x, y, w, h = map(float, line.strip().split())
-                        bboxes.append([x, y, w, h])
-                        class_labels.append(int(class_id))
-            
-            # Save visualization
-            save_path = os.path.join(vis_dir, f'aug_sample_{i+1:02d}.png')
-            visualize_augmentation(transform, image, bboxes, class_labels, save_path)
-            
-        logger.info(f"Saved {num_samples} augmentation visualizations to {vis_dir}")
-        
-        # Calculate total size of visualization files
-        total_size = sum(os.path.getsize(os.path.join(vis_dir, f)) 
-                        for f in os.listdir(vis_dir) if f.endswith('.png'))
-        logger.info(f"Total visualization size: {total_size / (1024*1024):.2f} MB")
-        
-    except Exception as e:
-        logger.error(f"Failed to visualize augmentations: {e}")
-
 def main():
     try:
         # Parse command line arguments

@@ -88,18 +88,34 @@ test: images/test    # Path to test images
 # Data augmentation parameters
 augmentation:
   horizontal_flip:
+    enabled: false
+    p: 0.5
+  hsv:
     enabled: true
     p: 0.5
-  brightness_contrast:
+    hgain: 0.015
+    sgain: 0.3
+    vgain: 0.2
+  mosaic:
     enabled: true
-    brightness_limit: 0.2
-    contrast_limit: 0.2
     p: 0.5
-  blur:
+  affine:
     enabled: true
-    blur_limit: 3
+    degrees: 5.0
+    scales: 0.1
+    shear: 5.0
+  motion_blur:
+    enabled: true
     p: 0.3
-  resize:
+    kernel_size: 7     # Size of the motion blur kernel
+    angle: 0.0         # Angle of motion (0 for horizontal motion)
+  noise:
     enabled: true
-    maintain_aspect_ratio: true
-    p: 1.0
+    p: 0.3
+    mean: 0.0
+    std: 0.1          # Controls noise intensity
+  weather:
+    enabled: true
+    p: 0.3
+    rain_intensity: 0.2
+    fog_coef: 0.1
