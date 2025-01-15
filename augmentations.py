@@ -1,13 +1,11 @@
-from super_gradients.training.transforms import (
-    DetectionTransform,
-    Normalize,
-    ComposeDetectionTransforms
-)
 from super_gradients.training.transforms.transforms import (
     Resize,
     HorizontalFlip,
+    Normalize,
     RandomBrightnessContrast,
-    RandomBlur
+    RandomBlur,
+    DetectionTransform,
+    ComposeDetectionTransforms
 )
 from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
