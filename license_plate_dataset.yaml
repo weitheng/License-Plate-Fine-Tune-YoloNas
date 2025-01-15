@@ -94,13 +94,28 @@ augmentation:
     enabled: true
     p: 0.5
     hgain: 0.015
-    sgain: 0.7
-    vgain: 0.4
+    sgain: 0.3
+    vgain: 0.2
   mosaic:
     enabled: true
     p: 0.5
   affine:
     enabled: true
-    degrees: 10.0
+    degrees: 5.0
     scales: 0.1
-    shear: 10.0
+    shear: 5.0
+  motion_blur:
+    enabled: true
+    p: 0.3
+    kernel_size: 7     # Size of the motion blur kernel
+    angle: 0.0         # Angle of motion (0 for horizontal motion)
+  noise:
+    enabled: true
+    p: 0.3
+    mean: 0.0
+    std: 0.1          # Controls noise intensity
+  weather:
+    enabled: true
+    p: 0.3
+    rain_intensity: 0.2
+    fog_coef: 0.1
