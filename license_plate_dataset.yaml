@@ -100,7 +100,7 @@ augmentation:
     enabled: true
     p: 0.5
   affine:
-    enabled: false
+    enabled: true
     degrees: 10.0
     scales: 0.1
     shear: 10.0
