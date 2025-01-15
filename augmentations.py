@@ -111,15 +111,25 @@ class SafeDetectionHSV(DetectionHSV):
     """HSV transform with additional shape checking"""
     def apply_to_sample(self, sample):
         try:
-            # Check shape before HSV
-            if len(sample.image.shape) != 3 or sample.image.shape[2] != 3:
-                logger.error(f"Invalid image shape before HSV: {sample.image.shape}")
-                sample.image = check_image(sample.image, "Pre-HSV")
+            image = sample.image
+            
+            # Convert to channels-last if needed
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                logger.info("Converting channels-first to channels-last before HSV")
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Ensure correct shape
+            if len(image.shape) != 3 or image.shape[2] != 3:
+                logger.error(f"Invalid image shape before HSV: {image.shape}")
+                image = check_image(image, "Pre-HSV")
+            
+            # Store the corrected image
+            sample.image = image
             
             # Apply HSV transform
             sample = super().apply_to_sample(sample)
             
-            # Check shape after HSV
+            # Final shape check
             if len(sample.image.shape) != 3 or sample.image.shape[2] != 3:
                 logger.error(f"Invalid image shape after HSV: {sample.image.shape}")
                 sample.image = check_image(sample.image, "Post-HSV")
@@ -138,18 +148,15 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     logger.info("Setting up training augmentations:")
     
-    # Always start with shape correction and rescale
+    # Always start with shape correction and rescale to ensure consistent size
     transforms.append(ImageShapeCorrection())
-    logger.info("  - Added image shape correction")
-    
-    # Add padded rescale early to ensure consistent dimensions
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
-    logger.info(f"  - Padded rescale to {input_size}")
+    logger.info(f"  - Added shape correction and rescale to {input_size}")
     
-    # Add HSV augmentation after rescale
+    # Add HSV augmentation
     if aug_config.get('hsv', {}).get('enabled', False):
         transforms.append(SafeDetectionHSV(
             prob=aug_config['hsv'].get('p', 0.5),
@@ -159,21 +166,26 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         ))
         logger.info("  - Safe HSV augmentation")
     
-    # Basic augmentations based on config
-    if aug_config.get('horizontal_flip', {}).get('enabled', False):
-        p = aug_config['horizontal_flip'].get('p', 0.5)
-        transforms.append(DetectionTargetsFormatTransform())  # For horizontal flip
-        logger.info(f"  - Horizontal Flip (p={p})")
-    
     # Add Mosaic augmentation
     if aug_config.get('mosaic', {}).get('enabled', False):
         transforms.append(DetectionMosaic(
             input_dim=input_size,
             prob=aug_config['mosaic'].get('p', 0.5)
         ))
-        logger.info("  - Mosaic augmentation")
-
-    # Add random affine - only if mosaic is disabled or after mosaic
+        # Add rescale after mosaic to ensure consistent size
+        transforms.append(DetectionPaddedRescale(
+            input_dim=input_size,
+            pad_value=114
+        ))
+        logger.info("  - Mosaic augmentation with rescale")
+    
+    # Basic augmentations
+    if aug_config.get('horizontal_flip', {}).get('enabled', False):
+        p = aug_config['horizontal_flip'].get('p', 0.5)
+        transforms.append(DetectionTargetsFormatTransform())
+        logger.info(f"  - Horizontal Flip (p={p})")
+    
+    # Add random affine
     if aug_config.get('affine', {}).get('enabled', False):
         if not aug_config.get('mosaic', {}).get('enabled', False):
             transforms.append(DetectionRandomAffine(
@@ -184,9 +196,15 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             ))
             logger.info("  - Random affine")
     
-    # Always include standardization (replaces normalization)
+    # Final rescale to ensure consistent size
+    transforms.append(DetectionPaddedRescale(
+        input_dim=input_size,
+        pad_value=114
+    ))
+    
+    # Standardization
     transforms.append(DetectionStandardize(max_value=255.0))
-    logger.info("  - Added standardization")
+    logger.info("  - Added final rescale and standardization")
     
     return transforms
 
