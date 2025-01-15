@@ -218,7 +218,11 @@ class DetectionHSV(DetectionTransform):
     def __call__(self, sample_dict):
         try:
             image = sample_dict['image']
-            image = ensure_rgb_format(image)  # Ensure correct format before HSV transform
+            # Convert to uint8 if needed
+            if image.dtype != np.uint8:
+                image = (image * 255).clip(0, 255).astype(np.uint8)
+            
+            image = ensure_rgb_format(image)
             
             # Convert to HSV
             hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
@@ -226,16 +230,31 @@ class DetectionHSV(DetectionTransform):
             # Random gains
             r = np.random.uniform(-1, 1, 3) * [self.hgain, self.sgain, self.vgain] + 1
             
-            # Apply gains
-            hsv = hsv * r
+            # Apply gains and ensure uint8
+            hsv = np.clip(hsv * r, 0, 255).astype(np.uint8)
             
-            # Clip and convert back to RGB
-            hsv = np.clip(hsv, 0, 255).astype(np.uint8)
+            # Convert back to RGB
             sample_dict['image'] = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
             
             return sample_dict
         except Exception as e:
             logger.error(f"Error in HSV transform: {e}")
+            return sample_dict
+
+class TypeDebugTransform(DetectionTransform):
+    """Debug transform to log image type and range"""
+    def __init__(self, name="TypeDebug"):
+        super().__init__()
+        self.name = name
+
+    def __call__(self, sample_dict):
+        try:
+            image = sample_dict['image']
+            logger.debug(f"{self.name} - Image dtype: {image.dtype}, "
+                        f"range: [{image.min():.3f}, {image.max():.3f}]")
+            return sample_dict
+        except Exception as e:
+            logger.error(f"Error in {self.name}: {e}")
             return sample_dict
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
@@ -249,14 +268,16 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     # Add debug transform at the start
     transforms.append(DebugTransform("Initial"))
     
-    # Add existing transforms with validation
+    # Add rescale transform
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
     logger.info(f"  - Padded rescale to {input_size}")
-    transforms.append(DebugTransform("Post-Rescale"))
-
+    # Convert to uint8 after rescale
+    transforms.append(lambda x: {'image': (x['image'] * 255).clip(0, 255).astype(np.uint8), 
+                               **{k: v for k, v in x.items() if k != 'image'}})
+    
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
@@ -362,8 +383,14 @@ def validate_image(image, transform_name="Unknown"):
         raise ValueError(f"{transform_name}: Image is None")
     if not isinstance(image, np.ndarray):
         raise ValueError(f"{transform_name}: Image must be a numpy array, got {type(image)}")
-    if image.dtype != np.uint8:
-        raise ValueError(f"{transform_name}: Image must be uint8, got {image.dtype}")
+    
+    # Convert float32 images to uint8 if needed
+    if image.dtype == np.float32:
+        if image.max() <= 1.0:
+            image = (image * 255).clip(0, 255).astype(np.uint8)
+        else:
+            image = image.clip(0, 255).astype(np.uint8)
+    
     if len(image.shape) not in [2, 3]:
         raise ValueError(f"{transform_name}: Image must be 2D or 3D array, got shape {image.shape}")
     if image.shape[0] <= 0 or image.shape[1] <= 0:
@@ -374,6 +401,8 @@ def validate_image(image, transform_name="Unknown"):
     # Add more detailed dimension logging
     logger.debug(f"{transform_name}: Image dimensions - Height: {image.shape[0]}, Width: {image.shape[1]}, " + 
                 f"Channels: {image.shape[2] if len(image.shape) > 2 else 1}")
+    
+    return image
 
 def verify_image_file(image_path: str) -> bool:
     """Verify if image file is valid"""
