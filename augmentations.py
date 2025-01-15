@@ -270,9 +270,14 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             input_format='XYXY_LABEL',
             output_format='LABEL_XYXY'
         ))
-        # Use the SuperGradients DetectionHSV directly
+        # Use the SuperGradients DetectionHSV with required parameters
         from super_gradients.training.transforms.transforms import DetectionHSV as SGDetectionHSV
-        transforms.append(SGDetectionHSV())  # Use default parameters
+        transforms.append(SGDetectionHSV(
+            prob=aug_config['hsv'].get('p', 0.5),  # Add probability parameter
+            hgain=aug_config['hsv'].get('hgain', 0.015),
+            sgain=aug_config['hsv'].get('sgain', 0.7),
+            vgain=aug_config['hsv'].get('vgain', 0.4)
+        ))
         transforms.append(DetectionTargetsFormatTransform(
             input_format='LABEL_XYXY',
             output_format='XYXY_LABEL'
