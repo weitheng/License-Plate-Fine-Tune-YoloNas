@@ -35,29 +35,61 @@ def check_image(img: np.ndarray, stage: str) -> np.ndarray:
         logger.error(f"{stage}: Image is None")
         raise ValueError(f"{stage}: Image is None")
     
-    # Log the current shape for debugging
-    logger.debug(f"{stage}: Image shape before check: {img.shape}")
+    # Detailed logging of image properties
+    logger.info(f"{stage}: Image properties:")
+    logger.info(f"  - Shape: {img.shape}")
+    logger.info(f"  - Type: {img.dtype}")
+    logger.info(f"  - Min value: {img.min()}")
+    logger.info(f"  - Max value: {img.max()}")
     
-    # Check if dimensions are transposed (channels last should be 3)
+    # If image is 1D, it might be flattened
+    if len(img.shape) == 1:
+        logger.warning(f"{stage}: Got 1D image array, attempting to reshape")
+        # Try to determine the original dimensions
+        total_pixels = img.shape[0]
+        if total_pixels % 3 == 0:  # If divisible by 3, might be RGB
+            height = int(np.sqrt(total_pixels / 3))
+            if height * height * 3 == total_pixels:
+                img = img.reshape(height, height, 3)
+                logger.info(f"  - Reshaped to: {img.shape}")
+    
+    # If image is 2D (height x width), it's grayscale
+    if len(img.shape) == 2:
+        logger.warning(f"{stage}: Got 2D (grayscale) image, converting to RGB")
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        logger.info(f"  - Converted to RGB shape: {img.shape}")
+    
+    # If image is (channels, height, width), transpose to (height, width, channels)
     if len(img.shape) == 3 and img.shape[0] == 3:
-        logger.warning(f"{stage}: Image appears to be in channels-first format, transposing")
+        logger.warning(f"{stage}: Got channels-first format, converting to channels-last")
         img = np.transpose(img, (1, 2, 0))
+        logger.info(f"  - Transposed to shape: {img.shape}")
     
-    if len(img.shape) != 3:
-        logger.warning(f"{stage}: Image has unexpected shape {img.shape}")
-        if len(img.shape) == 2:
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    # Ensure we have 3 channels
+    if len(img.shape) == 3:
+        if img.shape[2] != 3:
+            logger.warning(f"{stage}: Incorrect number of channels: {img.shape[2]}")
+            if img.shape[2] == 1:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif img.shape[2] > 3:
+                img = img[:, :, :3]
+            logger.info(f"  - Adjusted channels to: {img.shape}")
     
-    if img.shape[2] != 3:
-        logger.warning(f"{stage}: Image has {img.shape[2]} channels, attempting to fix")
-        if img.shape[2] > 3:
-            img = img[:, :, :3]
-    
-    # Ensure the image is in uint8 format
+    # Ensure uint8 format with correct range
     if img.dtype != np.uint8:
-        img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
+        if img.max() <= 1.0:
+            img = (img * 255).astype(np.uint8)
+        else:
+            img = img.astype(np.uint8)
+        logger.info(f"  - Converted to uint8, new range: [{img.min()}, {img.max()}]")
     
-    logger.debug(f"{stage}: Image shape after check: {img.shape}")
+    # Final validation
+    if len(img.shape) != 3 or img.shape[2] != 3:
+        logger.error(f"{stage}: Failed to process image")
+        logger.error(f"  - Final shape: {img.shape}")
+        logger.error(f"  - Expected shape: (height, width, 3)")
+        raise ValueError(f"{stage}: Failed to convert image to correct format. Final shape: {img.shape}")
+    
     return img
 
 class ImageShapeCorrection(DetectionTransform):
@@ -66,9 +98,14 @@ class ImageShapeCorrection(DetectionTransform):
         super().__init__()
     
     def apply_to_sample(self, sample):
-        image = sample.image
-        sample.image = check_image(image, "Shape-Correction")
-        return sample
+        try:
+            image = sample.image
+            sample.image = check_image(image, "Shape-Correction")
+            return sample
+        except Exception as e:
+            logger.error(f"Error in ImageShapeCorrection: {str(e)}")
+            logger.error(f"Original image shape: {sample.image.shape}")
+            raise
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
@@ -78,11 +115,21 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     logger.info("Setting up training augmentations:")
     
-    # Add shape correction as first transform
+    # Always start with shape correction
     transforms.append(ImageShapeCorrection())
     logger.info("  - Added image shape correction")
     
-    # Add padded rescale
+    # Add HSV augmentation early in the pipeline
+    if aug_config.get('hsv', {}).get('enabled', False):
+        transforms.append(DetectionHSV(
+            prob=aug_config['hsv'].get('p', 0.5),
+            hgain=aug_config['hsv'].get('hgain', 0.015),
+            sgain=aug_config['hsv'].get('sgain', 0.7),
+            vgain=aug_config['hsv'].get('vgain', 0.4)
+        ))
+        logger.info("  - HSV augmentation")
+    
+    # Add padded rescale after HSV
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
@@ -95,16 +142,6 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         transforms.append(DetectionTargetsFormatTransform())  # For horizontal flip
         logger.info(f"  - Horizontal Flip (p={p})")
     
-    # Add HSV augmentation
-    if aug_config.get('hsv', {}).get('enabled', False):
-        transforms.append(DetectionHSV(
-            prob=aug_config['hsv'].get('p', 0.5),
-            hgain=aug_config['hsv'].get('hgain', 0.015),
-            sgain=aug_config['hsv'].get('sgain', 0.7),
-            vgain=aug_config['hsv'].get('vgain', 0.4)
-        ))
-        logger.info("  - HSV augmentation")
-
     # Add Mosaic augmentation
     if aug_config.get('mosaic', {}).get('enabled', False):
         transforms.append(DetectionMosaic(
