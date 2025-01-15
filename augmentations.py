@@ -248,31 +248,40 @@ class TypeDebugTransform(DetectionTransform):
 # Add this new class
 class DetectionUint8Convert(DetectionTransform):
     """Convert image to uint8 format and ensure correct channel format"""
-    def __init__(self):
+    def __init__(self, name="Uint8Convert"):
         super().__init__()
+        self.name = name
 
     def __call__(self, sample_dict):
         image = sample_dict['image']
+        logger.debug(f"{self.name} input shape: {image.shape}, dtype: {image.dtype}")
         
-        # Check if image needs to be transposed
-        if len(image.shape) == 3 and image.shape[2] > 4:
-            # Image likely has channels in wrong dimension
-            image = np.transpose(image, (1, 2, 0))
+        # Handle different input formats
+        if len(image.shape) == 3:
+            if image.shape[0] == 3:  # (C, H, W) format
+                image = np.transpose(image, (1, 2, 0))
+            elif image.shape[2] > 4:  # Incorrect channel dimension
+                if image.shape[1] == 3:  # Try another transpose
+                    image = np.transpose(image, (0, 2, 1))
+                else:
+                    image = image[:, :, :3]  # Take first 3 channels
         
-        # Ensure image is in correct format (H, W, C)
+        # Ensure 3 channels
         if len(image.shape) == 2:
-            image = np.expand_dims(image, axis=-1)
-        
-        # Convert to RGB if needed
-        if image.shape[-1] == 1:
+            image = np.stack([image] * 3, axis=-1)
+        elif image.shape[-1] == 1:
             image = np.repeat(image, 3, axis=-1)
         elif image.shape[-1] > 3:
             image = image[:, :, :3]
             
         # Convert to uint8
         if image.dtype != np.uint8:
-            image = (image * 255).clip(0, 255).astype(np.uint8)
-            
+            if image.max() <= 1.0:
+                image = (image * 255).clip(0, 255).astype(np.uint8)
+            else:
+                image = image.clip(0, 255).astype(np.uint8)
+        
+        logger.debug(f"{self.name} output shape: {image.shape}, dtype: {image.dtype}")
         sample_dict['image'] = image
         return sample_dict
 
@@ -284,38 +293,34 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     logger.info("Setting up training augmentations:")
     
-    # Add debug transform at the start
-    transforms.append(DebugTransform("Initial"))
-    
-    # Add proper format conversion before rescale
-    transforms.append(DetectionUint8Convert())
-    transforms.append(DebugTransform("Post-Convert"))
+    # Initial format conversion
+    transforms.append(DetectionUint8Convert("Initial"))
     
     # Add rescale transform
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
-    transforms.append(DebugTransform("Post-Rescale"))
+    transforms.append(DetectionUint8Convert("Post-Rescale"))
     logger.info(f"  - Padded rescale to {input_size}")
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
         transforms.append(DetectionTargetsFormatTransform())  # For horizontal flip
+        transforms.append(DetectionUint8Convert("Post-Flip"))
         logger.info(f"  - Horizontal Flip (p={p})")
     
     # Add HSV augmentation
     if aug_config.get('hsv', {}).get('enabled', False):
-        transforms.append(DebugTransform("Pre-HSV"))
+        transforms.append(DetectionUint8Convert("Pre-HSV"))
         transforms.append(DetectionTargetsFormatTransform(
             input_format='XYXY_LABEL',
             output_format='LABEL_XYXY'
         ))
-        # Use the SuperGradients DetectionHSV with required parameters
         from super_gradients.training.transforms.transforms import DetectionHSV as SGDetectionHSV
         transforms.append(SGDetectionHSV(
-            prob=aug_config['hsv'].get('p', 0.5),  # Add probability parameter
+            prob=aug_config['hsv'].get('p', 0.5),
             hgain=aug_config['hsv'].get('hgain', 0.015),
             sgain=aug_config['hsv'].get('sgain', 0.7),
             vgain=aug_config['hsv'].get('vgain', 0.4)
@@ -324,7 +329,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             input_format='LABEL_XYXY',
             output_format='XYXY_LABEL'
         ))
-        transforms.append(DebugTransform("Post-HSV"))
+        transforms.append(DetectionUint8Convert("Post-HSV"))
         logger.info("  - HSV augmentation")
 
     # Add Mosaic augmentation if enabled
@@ -337,16 +342,15 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
 
     # Add affine transformation with additional checks
     if aug_config.get('affine', {}).get('enabled', False):
-        transforms.append(DebugTransform("Pre-Affine"))
-        transforms.append(DetectionUint8Convert())  # Ensure proper format before affine
+        transforms.append(DetectionUint8Convert("Pre-Affine"))
         transforms.append(DetectionRandomAffine(
             degrees=aug_config['affine'].get('degrees', 5.0),
             scales=aug_config['affine'].get('scales', 0.1),
             shear=aug_config['affine'].get('shear', 5.0),
             target_size=input_size,
-            border_value=114  # Explicitly set border value
+            border_value=114
         ))
-        transforms.append(DebugTransform("Post-Affine"))
+        transforms.append(DetectionUint8Convert("Post-Affine"))
         logger.info("  - Affine transformation")
     
     # Add custom augmentations with reduced probability
@@ -375,6 +379,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         logger.info("  - Weather effects augmentation")
     
     # Always include standardization at the end
+    transforms.append(DetectionUint8Convert("Pre-Standardize"))
     transforms.append(DetectionStandardize(max_value=255.0))
     transforms.append(DebugTransform("Final"))
     logger.info("  - Added standardization")
