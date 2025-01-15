@@ -20,56 +20,65 @@ def get_training_augmentations(input_size, config):
     """
     train_config = config.get('train', {})
     
-    transform = A.Compose([
-        # Resize with consistent aspect ratio
-        A.LongestMaxSize(
-            max_size=max(input_size),
-            always_apply=True
-        ),
-        A.PadIfNeeded(
-            min_height=input_size[0],
-            min_width=input_size[1],
-            border_mode=cv2.BORDER_CONSTANT,
-            value=(0, 0, 0),
-            always_apply=True
-        ),
-        
-        # Color augmentations
-        A.OneOf([
-            A.RandomBrightnessContrast(
-                brightness_limit=train_config['color']['brightness_limit'],
-                contrast_limit=train_config['color']['contrast_limit'],
-                p=0.7
+    # Add validation for required config sections
+    if not all(key in train_config for key in ['color', 'geometric', 'normalize', 'bbox_params']):
+        raise ValueError("Missing required augmentation configuration sections")
+    
+    try:
+        transform = A.Compose([
+            # Basic resize with consistent aspect ratio
+            A.LongestMaxSize(
+                max_size=max(input_size),
+                always_apply=True
             ),
-            A.HueSaturationValue(
-                hue_shift_limit=train_config['color']['hue_shift_limit'],
-                sat_shift_limit=train_config['color']['sat_shift_limit'],
-                val_shift_limit=train_config['color']['val_shift_limit'],
-                p=0.3
+            A.PadIfNeeded(
+                min_height=input_size[0],
+                min_width=input_size[1],
+                border_mode=cv2.BORDER_CONSTANT,
+                value=(0, 0, 0),
+                always_apply=True
             ),
-        ], p=train_config['color']['p']),
-        
-        # Geometric augmentations
-        A.HorizontalFlip(p=0.5 if train_config['geometric']['horizontal_flip'] else 0),
-        A.ShiftScaleRotate(
-            shift_limit=0,
-            scale_limit=train_config['geometric']['scale_limit'],
-            rotate_limit=train_config['geometric']['rotate_limit'],
-            p=train_config['geometric']['p']
-        ),
-        
-        # Normalize and convert to tensor
-        A.Normalize(
-            mean=train_config['normalize']['mean'],
-            std=train_config['normalize']['std']
-        ),
-        ToTensorV2(),
-    ], 
-    bbox_params=A.BboxParams(
-        format=train_config['bbox_params']['format'],
-        min_visibility=train_config['bbox_params']['min_visibility'],
-        label_fields=['class_labels']
-    ))
+            
+            # Color augmentations with safe fallbacks
+            A.OneOf([
+                A.RandomBrightnessContrast(
+                    brightness_limit=train_config['color'].get('brightness_limit', [-0.1, 0.1]),
+                    contrast_limit=train_config['color'].get('contrast_limit', [-0.1, 0.1]),
+                    p=0.7
+                ),
+                A.HueSaturationValue(
+                    hue_shift_limit=train_config['color'].get('hue_shift_limit', 5),
+                    sat_shift_limit=train_config['color'].get('sat_shift_limit', 10),
+                    val_shift_limit=train_config['color'].get('val_shift_limit', 10),
+                    p=0.3
+                ),
+            ], p=train_config['color'].get('p', 0.3)),
+            
+            # Geometric augmentations with safe fallbacks
+            A.HorizontalFlip(
+                p=0.5 if train_config['geometric'].get('horizontal_flip', True) else 0
+            ),
+            A.ShiftScaleRotate(
+                shift_limit=0,
+                scale_limit=train_config['geometric'].get('scale_limit', [-0.1, 0.1]),
+                rotate_limit=train_config['geometric'].get('rotate_limit', 0),
+                p=train_config['geometric'].get('p', 0.3)
+            ),
+            
+            # Normalize and convert to tensor
+            A.Normalize(
+                mean=train_config['normalize'].get('mean', [0.485, 0.456, 0.406]),
+                std=train_config['normalize'].get('std', [0.229, 0.224, 0.225])
+            ),
+            ToTensorV2(),
+        ], 
+        bbox_params=A.BboxParams(
+            format=train_config['bbox_params'].get('format', 'yolo'),
+            min_visibility=train_config['bbox_params'].get('min_visibility', 0.3),
+            label_fields=['class_labels']
+        ))
+    except Exception as e:
+        raise ValueError(f"Failed to create augmentation pipeline: {str(e)}")
     
     # Add debug wrapper if needed
     if DEBUG_MODE:
@@ -107,13 +116,13 @@ def get_validation_augmentations(input_size, config):
             always_apply=True
         ),
         A.Normalize(
-            mean=val_config['normalize']['mean'],
-            std=val_config['normalize']['std']
+            mean=val_config['normalize'].get('mean', [0.485, 0.456, 0.406]),
+            std=val_config['normalize'].get('std', [0.229, 0.224, 0.225])
         ),
         ToTensorV2(),
     ], 
     bbox_params=A.BboxParams(
-        format=val_config['bbox_params']['format'],
-        min_visibility=val_config['bbox_params']['min_visibility'],
+        format=val_config['bbox_params'].get('format', 'yolo'),
+        min_visibility=val_config['bbox_params'].get('min_visibility', 0.3),
         label_fields=['class_labels']
     )) 

@@ -113,6 +113,17 @@ augmentation:
       min_visibility: 0.3
       min_size: 0.001
       max_aspect_ratio: 20.0
+    advanced:
+      mosaic_enabled: false  # Disable mosaic augmentation for license plates
+      mixup_enabled: false   # Disable mixup augmentation for license plates
+      cutout_enabled: false  # Disable cutout augmentation for license plates
+    
+    # Add size constraints
+    size_limits:
+      min_box_area: 0.0001  # Minimum box area as fraction of image
+      max_box_area: 0.9     # Maximum box area as fraction of image
+      min_box_size: 2       # Minimum box dimension in pixels
+      max_aspect_ratio: 20.0 # Maximum box aspect ratio
 
   val:
     resize:
@@ -126,3 +137,21 @@ augmentation:
       format: yolo
       min_visibility: 0.3
       min_size: 0.001
+
+# Add dataset parameters
+dataset_params:
+  max_objects_per_image: 150
+  filter_empty_gt: true
+  min_size_threshold: 2
+  use_cache: true
+  cache_dir: "cache"
+
+# Add training parameters
+training:
+  batch_size: 16
+  num_workers: 4
+  pin_memory: true
+  shuffle_train: true
+  drop_last: true
+  max_epochs: 100
+  early_stopping_patience: 10

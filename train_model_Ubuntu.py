@@ -1286,6 +1286,16 @@ class LossComponentCallback(PhaseCallback):
                 logger.warning(f"Zero values detected in losses: {zero_losses}")
                 logger.info(f"Current loss values: {loss_dict}")
 
+def validate_config(config):
+    """Validate the loaded configuration"""
+    required_sections = ['names', 'nc', 'train', 'val', 'augmentation']
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required section in config: {section}")
+    
+    if config['nc'] != len(config['names']):
+        raise ValueError(f"Number of classes ({config['nc']}) doesn't match length of names ({len(config['names'])})")
+
 def get_dataloaders(combined_dir, hw_params, config):
     """Initialize dataloaders with augmentations"""
     # Load license plate config
@@ -1294,6 +1304,9 @@ def get_dataloaders(combined_dir, hw_params, config):
     
     with open(yaml_path, 'r') as f:
         dataset_config = yaml.safe_load(f)
+    
+    # Validate the loaded configuration
+    validate_config(dataset_config)
     
     aug_config = dataset_config.get('augmentation', {})
     
@@ -1680,6 +1693,9 @@ def main():
         # Call it before training
         verify_trainer_setup(trainer, train_params)
         
+        # Validate prediction callback
+        validate_prediction_callback(train_params['valid_metrics_list'][0].post_prediction_callback)
+        
         trainer.train(
             model=model,
             training_params=train_params,
@@ -1787,3 +1803,22 @@ log_environment_info()
 
 if __name__ == "__main__":
     main()
+
+def validate_model_output(outputs, targets):
+    """Validate model outputs against targets"""
+    if outputs.shape[-1] != 85:  # 4 box coords + 1 objectness + 80 classes
+        raise ValueError(f"Invalid output shape: {outputs.shape}")
+    if len(targets) > 0 and targets.shape[-1] != 6:  # batch_idx + class_idx + 4 box coords
+        raise ValueError(f"Invalid target shape: {targets.shape}")
+
+def validate_prediction_callback(callback):
+    """Validate prediction callback configuration"""
+    required_attrs = ['score_threshold', 'nms_threshold', 'max_predictions']
+    for attr in required_attrs:
+        if not hasattr(callback, attr):
+            raise ValueError(f"Prediction callback missing required attribute: {attr}")
+        
+    # Add this before training starts
+    for callback in train_params['valid_metrics_list']:
+        if hasattr(callback, 'post_prediction_callback'):
+            validate_prediction_callback(callback.post_prediction_callback)

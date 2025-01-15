@@ -190,11 +190,23 @@ class AugmentedDetectionDataset(Dataset):
     Custom dataset class with Albumentations augmentations support.
     """
     def __init__(self, data_dir, images_dir, labels_dir, transforms, input_size=(640, 640)):
+        # Validate input size
+        if not isinstance(input_size, (tuple, list)) or len(input_size) != 2:
+            raise ValueError(f"input_size must be a tuple of (height, width), got {input_size}")
+        if not all(isinstance(x, int) and x > 0 for x in input_size):
+            raise ValueError(f"input_size values must be positive integers, got {input_size}")
+            
         self.data_dir = data_dir
         self.images_dir = os.path.join(data_dir, images_dir)
         self.labels_dir = os.path.join(data_dir, labels_dir)
         self.transforms = transforms
         self.input_size = input_size
+        
+        # Add validation for directories
+        if not os.path.exists(self.images_dir):
+            raise ValueError(f"Images directory not found: {self.images_dir}")
+        if not os.path.exists(self.labels_dir):
+            raise ValueError(f"Labels directory not found: {self.labels_dir}")
         
         # Adjusted thresholds to reduce warnings
         self.MAX_BOXES_WARNING = 150     # Increased from 100
