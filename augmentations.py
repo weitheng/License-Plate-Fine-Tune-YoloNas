@@ -107,6 +107,29 @@ class ImageShapeCorrection(DetectionTransform):
             logger.error(f"Original image shape: {sample.image.shape}")
             raise
 
+class SafeDetectionHSV(DetectionHSV):
+    """HSV transform with additional shape checking"""
+    def apply_to_sample(self, sample):
+        try:
+            # Check shape before HSV
+            if len(sample.image.shape) != 3 or sample.image.shape[2] != 3:
+                logger.error(f"Invalid image shape before HSV: {sample.image.shape}")
+                sample.image = check_image(sample.image, "Pre-HSV")
+            
+            # Apply HSV transform
+            sample = super().apply_to_sample(sample)
+            
+            # Check shape after HSV
+            if len(sample.image.shape) != 3 or sample.image.shape[2] != 3:
+                logger.error(f"Invalid image shape after HSV: {sample.image.shape}")
+                sample.image = check_image(sample.image, "Post-HSV")
+            
+            return sample
+        except Exception as e:
+            logger.error(f"Error in HSV transform: {str(e)}")
+            logger.error(f"Image shape: {sample.image.shape if hasattr(sample, 'image') else 'No image'}")
+            raise
+
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
@@ -115,26 +138,26 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     logger.info("Setting up training augmentations:")
     
-    # Always start with shape correction
+    # Always start with shape correction and rescale
     transforms.append(ImageShapeCorrection())
     logger.info("  - Added image shape correction")
     
-    # Add HSV augmentation early in the pipeline
-    if aug_config.get('hsv', {}).get('enabled', False):
-        transforms.append(DetectionHSV(
-            prob=aug_config['hsv'].get('p', 0.5),
-            hgain=aug_config['hsv'].get('hgain', 0.015),
-            sgain=aug_config['hsv'].get('sgain', 0.7),
-            vgain=aug_config['hsv'].get('vgain', 0.4)
-        ))
-        logger.info("  - HSV augmentation")
-    
-    # Add padded rescale after HSV
+    # Add padded rescale early to ensure consistent dimensions
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
     logger.info(f"  - Padded rescale to {input_size}")
+    
+    # Add HSV augmentation after rescale
+    if aug_config.get('hsv', {}).get('enabled', False):
+        transforms.append(SafeDetectionHSV(
+            prob=aug_config['hsv'].get('p', 0.5),
+            hgain=aug_config['hsv'].get('hgain', 0.015),
+            sgain=aug_config['hsv'].get('sgain', 0.7),
+            vgain=aug_config['hsv'].get('vgain', 0.4)
+        ))
+        logger.info("  - Safe HSV augmentation")
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
