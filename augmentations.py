@@ -1,8 +1,8 @@
 from super_gradients.training.transforms import (
-    DetectionTransform, 
-    Resize, 
-    HorizontalFlip, 
-    Normalize,
+    DetectionTransform,
+    DetectionRescale,
+    DetectionHorizontalFlip,
+    DetectionNormalize,
     DetectionHSV,
     DetectionMosaic,
     DetectionRandomAffine,
@@ -50,17 +50,16 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     # Log which augmentations are being used
     logger.info("Setting up training augmentations:")
     
-    # Add resize as first transform
-    transforms.append(Resize(
-        size=input_size,
-        preserve_aspect_ratio=True
+    # Add rescale as first transform
+    transforms.append(DetectionRescale(
+        output_shape=input_size
     ))
-    logger.info(f"  - Resize to {input_size}")
+    logger.info(f"  - Rescale to {input_size}")
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
-        transforms.append(HorizontalFlip(prob=p))
+        transforms.append(DetectionHorizontalFlip(prob=p))
         logger.info(f"  - Horizontal Flip (p={p})")
     
     # Add HSV augmentation
@@ -92,7 +91,10 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         logger.info("  - Random affine")
     
     # Always include normalization
-    transforms.append(Normalize())
+    transforms.append(DetectionNormalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    ))
     logger.info("  - Added normalization")
     
     # Create the composition
@@ -112,10 +114,13 @@ def create_val_transforms(input_size: Tuple[int, int]) -> ComposeTransforms:
     """
     logger.info("Setting up validation transforms:")
     transform = ComposeTransforms([
-        Resize(size=input_size, preserve_aspect_ratio=True),
-        Normalize()
+        DetectionRescale(output_shape=input_size),
+        DetectionNormalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
     ])
-    logger.info("  - Added resize and normalization")
+    logger.info("  - Added rescale and normalization")
     return transform
 
 def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> ComposeTransforms:
