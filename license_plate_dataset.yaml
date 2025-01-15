@@ -97,7 +97,7 @@ augmentation:
     sgain: 0.7
     vgain: 0.4
   mosaic:
-    enabled: false
+    enabled: true
     p: 0.5
   affine:
     enabled: false

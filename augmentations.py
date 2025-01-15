@@ -35,35 +35,24 @@ def check_image(img: np.ndarray, stage: str) -> np.ndarray:
         logger.error(f"{stage}: Image is None")
         raise ValueError(f"{stage}: Image is None")
     
-    # Detailed logging of image properties
-    logger.info(f"{stage}: Image properties:")
-    logger.info(f"  - Shape: {img.shape}")
-    logger.info(f"  - Type: {img.dtype}")
-    logger.info(f"  - Min value: {img.min()}")
-    logger.info(f"  - Max value: {img.max()}")
-    
-    # If image is 1D, it might be flattened
+    # # Detailed logging of image properties
+    # logger.info(f"{stage}: Image properties:")
+    # logger.info(f"  - Shape: {img.shape}")
+    # logger.info(f"  - Type: {img.dtype}")
+    # logger.info(f"  - Min value: {img.min()}")
+    # logger.info(f"  - Max value: {img.max()}")
+    # Only log errors, not regular transformations
     if len(img.shape) == 1:
         logger.warning(f"{stage}: Got 1D image array, attempting to reshape")
-        # Try to determine the original dimensions
-        total_pixels = img.shape[0]
-        if total_pixels % 3 == 0:  # If divisible by 3, might be RGB
-            height = int(np.sqrt(total_pixels / 3))
-            if height * height * 3 == total_pixels:
-                img = img.reshape(height, height, 3)
-                logger.info(f"  - Reshaped to: {img.shape}")
     
     # If image is 2D (height x width), it's grayscale
     if len(img.shape) == 2:
         logger.warning(f"{stage}: Got 2D (grayscale) image, converting to RGB")
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        logger.info(f"  - Converted to RGB shape: {img.shape}")
     
     # If image is (channels, height, width), transpose to (height, width, channels)
     if len(img.shape) == 3 and img.shape[0] == 3:
-        logger.warning(f"{stage}: Got channels-first format, converting to channels-last")
         img = np.transpose(img, (1, 2, 0))
-        logger.info(f"  - Transposed to shape: {img.shape}")
     
     # Ensure we have 3 channels
     if len(img.shape) == 3:
@@ -73,7 +62,6 @@ def check_image(img: np.ndarray, stage: str) -> np.ndarray:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             elif img.shape[2] > 3:
                 img = img[:, :, :3]
-            logger.info(f"  - Adjusted channels to: {img.shape}")
     
     # Ensure uint8 format with correct range
     if img.dtype != np.uint8:
@@ -81,13 +69,11 @@ def check_image(img: np.ndarray, stage: str) -> np.ndarray:
             img = (img * 255).astype(np.uint8)
         else:
             img = img.astype(np.uint8)
-        logger.info(f"  - Converted to uint8, new range: [{img.min()}, {img.max()}]")
     
     # Final validation
     if len(img.shape) != 3 or img.shape[2] != 3:
         logger.error(f"{stage}: Failed to process image")
         logger.error(f"  - Final shape: {img.shape}")
-        logger.error(f"  - Expected shape: (height, width, 3)")
         raise ValueError(f"{stage}: Failed to convert image to correct format. Final shape: {img.shape}")
     
     return img
@@ -115,7 +101,6 @@ class SafeDetectionHSV(DetectionHSV):
             
             # Convert to channels-last if needed
             if len(image.shape) == 3 and image.shape[0] == 3:
-                logger.info("Converting channels-first to channels-last before HSV")
                 image = np.transpose(image, (1, 2, 0))
             
             # Ensure correct shape
@@ -146,9 +131,8 @@ class SafeDetectionPaddedRescale(DetectionPaddedRescale):
         try:
             image = sample.image
             
-            # Ensure image is in channels-last format (H, W, C)
+            # Convert to channels-last if needed
             if len(image.shape) == 3 and image.shape[0] == 3:
-                logger.info("Converting channels-first to channels-last before rescale")
                 image = np.transpose(image, (1, 2, 0))
             
             # Ensure image is in uint8 format
