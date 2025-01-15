@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
 import logging
 import os
+import cv2
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,24 @@ def validate_aug_config(config: Dict[str, Any]) -> None:
             
         if 'p' in aug_params and not (0 <= aug_params['p'] <= 1):
             raise ValueError(f"Invalid probability for {aug_name}: must be between 0 and 1")
+
+def check_image(img: np.ndarray, stage: str) -> np.ndarray:
+    """Check and fix image format if needed."""
+    if img is None:
+        logger.error(f"{stage}: Image is None")
+        raise ValueError(f"{stage}: Image is None")
+        
+    if len(img.shape) != 3:
+        logger.warning(f"{stage}: Image has unexpected shape {img.shape}")
+        if len(img.shape) == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    
+    if img.shape[2] != 3:
+        logger.warning(f"{stage}: Image has {img.shape[2]} channels, attempting to fix")
+        if img.shape[2] > 3:
+            img = img[:, :, :3]
+        
+    return img.astype(np.uint8)
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
@@ -67,15 +86,16 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         ))
         logger.info("  - Mosaic augmentation")
 
-    # Add random affine
+    # Add random affine - only if mosaic is disabled or after mosaic
     if aug_config.get('affine', {}).get('enabled', False):
-        transforms.append(DetectionRandomAffine(
-            degrees=aug_config['affine'].get('degrees', 10.0),
-            scales=aug_config['affine'].get('scales', 0.1),
-            shear=aug_config['affine'].get('shear', 10.0),
-            target_size=input_size
-        ))
-        logger.info("  - Random affine")
+        if not aug_config.get('mosaic', {}).get('enabled', False):
+            transforms.append(DetectionRandomAffine(
+                degrees=aug_config['affine'].get('degrees', 10.0),
+                scales=aug_config['affine'].get('scales', 0.1),
+                shear=aug_config['affine'].get('shear', 10.0),
+                target_size=input_size
+            ))
+            logger.info("  - Random affine")
     
     # Always include standardization (replaces normalization)
     transforms.append(DetectionStandardize(max_value=255.0))
