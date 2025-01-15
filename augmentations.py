@@ -77,15 +77,16 @@ class DetectionMotionBlur(DetectionTransform):
         
         return cv2.filter2D(image.astype(np.float32), -1, kernel).astype(np.uint8)
 
-    def __call__(self, image, target):
+    def __call__(self, sample_dict):
         try:
+            image = sample_dict['image']
             validate_image(image, "MotionBlur")
             if random.random() < self.prob:
-                image = self.apply_motion_blur(image)
-            return image, target
+                sample_dict['image'] = self.apply_motion_blur(image)
+            return sample_dict
         except Exception as e:
             logger.error(f"Error in MotionBlur: {e}")
-            return image, target
+            return sample_dict
 
     def __del__(self):
         if hasattr(self, 'kernel'):
@@ -104,15 +105,16 @@ class DetectionNoise(DetectionTransform):
         noisy_image = image + noise
         return np.clip(noisy_image, 0, 255).astype(np.uint8)
 
-    def __call__(self, image, target):
+    def __call__(self, sample_dict):
         try:
+            image = sample_dict['image']
             validate_image(image, "Noise")
             if random.random() < self.prob:
-                image = self.add_noise(image)
-            return image, target
+                sample_dict['image'] = self.add_noise(image)
+            return sample_dict
         except Exception as e:
             logger.error(f"Error in Noise: {e}")
-            return image, target
+            return sample_dict
 
     def __del__(self):
         if hasattr(self, 'noise'):
@@ -154,19 +156,20 @@ class DetectionWeatherEffects(DetectionTransform):
         fog = np.ones_like(image) * 255
         return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
 
-    def __call__(self, image, target):
+    def __call__(self, sample_dict):
         try:
+            image = sample_dict['image']
             validate_image(image, "WeatherEffects")
             if random.random() < self.prob:
                 effect = random.choice(['rain', 'fog'])
                 if effect == 'rain':
-                    image = self.add_rain(image)
+                    sample_dict['image'] = self.add_rain(image)
                 else:
-                    image = self.add_fog(image)
-            return image, target
+                    sample_dict['image'] = self.add_fog(image)
+            return sample_dict
         except Exception as e:
             logger.error(f"Error in WeatherEffects: {e}")
-            return image, target
+            return sample_dict
 
     def __del__(self):
         if hasattr(self, 'rain_effect'):
@@ -178,14 +181,15 @@ class DebugTransform(DetectionTransform):
         super().__init__()
         self.name = name
 
-    def __call__(self, image, target):
+    def __call__(self, sample_dict):
         try:
+            image = sample_dict['image']
             logger.debug(f"{self.name} - Image shape: {image.shape}, dtype: {image.dtype}")
             validate_image(image, self.name)
-            return image, target
+            return sample_dict
         except Exception as e:
             logger.error(f"Error in {self.name}: {e}")
-            return image, target
+            return sample_dict
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
