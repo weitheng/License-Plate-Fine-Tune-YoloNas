@@ -248,7 +248,6 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             output_format='LABEL_XYXY'
         ))
         transforms.append(DetectionHSV(
-            prob=aug_config['hsv'].get('p', 0.5),
             hgain=aug_config['hsv'].get('hgain', 0.015),
             sgain=aug_config['hsv'].get('sgain', 0.3),
             vgain=aug_config['hsv'].get('vgain', 0.2)
