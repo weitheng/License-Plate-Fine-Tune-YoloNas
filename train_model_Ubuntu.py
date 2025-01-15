@@ -27,7 +27,9 @@ from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
-from augmentations import get_transforms
+from augmentations import get_transforms, visualize_augmentation, setup_visualization_dir
+import random
+import cv2
 
 # Constants for dataset validation
 EXPECTED_LP_TRAIN = 25470
@@ -549,13 +551,15 @@ def parse_args():
               %(prog)s --skip-lp-checks  # Skip license plate checks if already processed
               %(prog)s --no-resume  # Start training from scratch
               %(prog)s --skip-lp-checks --no-resume  # Skip checks and start fresh
-            
             Note: Use --skip-lp-checks only if you have already run remove_prefix.py
+              %(prog)s --skip-visualizations  # Skip augmentation visualizations
             '''))
     parser.add_argument('--skip-lp-checks', action='store_true',
                        help='Skip license plate dataset checks and prefix removal (use if already processed)')
     parser.add_argument('--no-resume', action='store_true',
                        help='Start training from scratch instead of resuming from checkpoint')
+    parser.add_argument('--skip-visualizations', action='store_true',
+                       help='Skip generating augmentation visualizations')
     return parser.parse_args()
 
 def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> Dict[str, Dict[str, int]]:
@@ -1212,6 +1216,65 @@ def validate_image_paths(data_dir: str) -> None:
         
         logger.success(f"✓ All {len(image_files)} images in {split} split are valid and readable")
 
+def visualize_sample_augmentations(dataset_dir: str, config: Dict[str, Any], 
+                                 input_size: Tuple[int, int], experiment_name: str,
+                                 num_samples: int = 10):
+    """
+    Visualize sample augmentations for debugging.
+    Limited to num_samples images to prevent disk space issues.
+    """
+    try:
+        # Setup visualization directory with experiment name
+        vis_dir = setup_visualization_dir(os.path.dirname(dataset_dir), experiment_name)
+        
+        # Get training transforms
+        transform = get_transforms(config, input_size, is_training=True)
+        
+        # Get some sample images and their annotations
+        train_img_dir = os.path.join(dataset_dir, 'images', 'train')
+        train_label_dir = os.path.join(dataset_dir, 'labels', 'train')
+        
+        # Get random samples (limited to num_samples)
+        img_files = [f for f in os.listdir(train_img_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
+        num_samples = min(num_samples, len(img_files))  # Make sure we don't exceed available images
+        samples = random.sample(img_files, num_samples)
+        
+        logger.info(f"Generating {num_samples} augmentation visualizations...")
+        
+        for i, img_file in enumerate(samples):
+            # Load image
+            img_path = os.path.join(train_img_dir, img_file)
+            image = cv2.imread(img_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # Load corresponding label
+            label_file = os.path.splitext(img_file)[0] + '.txt'
+            label_path = os.path.join(train_label_dir, label_file)
+            
+            bboxes = []
+            class_labels = []
+            
+            if os.path.exists(label_path):
+                with open(label_path, 'r') as f:
+                    for line in f:
+                        class_id, x, y, w, h = map(float, line.strip().split())
+                        bboxes.append([x, y, w, h])
+                        class_labels.append(int(class_id))
+            
+            # Save visualization
+            save_path = os.path.join(vis_dir, f'aug_sample_{i+1:02d}.png')
+            visualize_augmentation(transform, image, bboxes, class_labels, save_path)
+            
+        logger.info(f"Saved {num_samples} augmentation visualizations to {vis_dir}")
+        
+        # Calculate total size of visualization files
+        total_size = sum(os.path.getsize(os.path.join(vis_dir, f)) 
+                        for f in os.listdir(vis_dir) if f.endswith('.png'))
+        logger.info(f"Total visualization size: {total_size / (1024*1024):.2f} MB")
+        
+    except Exception as e:
+        logger.error(f"Failed to visualize augmentations: {e}")
+
 def main():
     try:
         # Parse command line arguments
@@ -1527,6 +1590,15 @@ def main():
         
         if args.skip_lp_checks:
             logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
+        
+        if not args.skip_visualizations:
+            logger.info("Generating augmentation visualizations...")
+            visualize_sample_augmentations(
+                dataset_dir=combined_dir,
+                config=dataset_config,
+                input_size=config.input_size,
+                experiment_name='coco_license_plate_detection'
+            )
         
         trainer.train(
             model=model,

@@ -99,3 +99,7 @@ augmentation:
     enabled: true
     blur_limit: 3
     p: 0.3
+  resize:
+    enabled: true
+    maintain_aspect_ratio: true
+    p: 1.0
