@@ -1,5 +1,12 @@
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+from super_gradients.training.transforms import (
+    DetectionTransform,
+    Resize,
+    HorizontalFlip,
+    Normalize,
+    ComposeDetectionTransforms,
+    RandomBrightnessContrast,
+    RandomBlur
+)
 from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
 import logging
@@ -21,7 +28,7 @@ def validate_aug_config(config: Dict[str, Any]) -> None:
         if 'p' in aug_params and not (0 <= aug_params['p'] <= 1):
             raise ValueError(f"Invalid probability for {aug_name}: must be between 0 and 1")
 
-def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> A.Compose:
+def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> ComposeDetectionTransforms:
     """
     Create training transforms based on config.
     
@@ -30,7 +37,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         input_size: Tuple of (height, width) for input size
         
     Returns:
-        Albumentations Compose object with transforms
+        ComposeDetectionTransforms object with transforms
     """
     # Validate config first
     validate_aug_config(config)
@@ -43,24 +50,20 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     logger.info("Setting up training augmentations:")
     
     # Add resize as first transform
-    transforms.append(A.Resize(
-        height=input_size[0],
-        width=input_size[1],
-        p=1.0
-    ))
+    transforms.append(Resize(input_size))
     logger.info(f"  - Resize to {input_size}")
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
-        transforms.append(A.HorizontalFlip(p=p))
+        transforms.append(HorizontalFlip(p=p))
         logger.info(f"  - Horizontal Flip (p={p})")
     
     if aug_config.get('brightness_contrast', {}).get('enabled', False):
         brightness = aug_config['brightness_contrast'].get('brightness_limit', 0.2)
         contrast = aug_config['brightness_contrast'].get('contrast_limit', 0.2)
         p = aug_config['brightness_contrast'].get('p', 0.5)
-        transforms.append(A.RandomBrightnessContrast(
+        transforms.append(RandomBrightnessContrast(
             brightness_limit=brightness,
             contrast_limit=contrast,
             p=p
@@ -70,36 +73,16 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     if aug_config.get('blur', {}).get('enabled', False):
         blur_limit = aug_config['blur'].get('blur_limit', 3)
         p = aug_config['blur'].get('p', 0.3)
-        transforms.append(A.Blur(blur_limit=blur_limit, p=p))
+        transforms.append(RandomBlur(blur_limit=blur_limit, p=p))
         logger.info(f"  - Blur (blur_limit={blur_limit}, p={p})")
     
-    # Always include normalization and tensor conversion
-    transforms.extend([
-        A.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
-            max_pixel_value=255.0,
-            p=1.0
-        ),
-        ToTensorV2(p=1.0)
-    ])
+    # Always include normalization
+    transforms.append(Normalize())
+    logger.info("  - Added normalization")
     
-    # Create the composition with bbox handling
-    transform = A.Compose(
-        transforms,
-        bbox_params=A.BboxParams(
-            format='yolo',           # Using YOLO format: [x_center, y_center, width, height]
-            label_fields=['class_labels'],
-            min_visibility=0.3       # Only keep boxes that are at least 30% visible after augmentation
-        )
-    )
-    
-    logger.info("  - Added bbox handling with YOLO format")
-    logger.info("  - Added normalization and tensor conversion")
-    
-    return transform
+    return ComposeDetectionTransforms(transforms)
 
-def create_val_transforms(input_size: Tuple[int, int]) -> A.Compose:
+def create_val_transforms(input_size: Tuple[int, int]) -> ComposeDetectionTransforms:
     """
     Create validation transforms.
     
@@ -107,29 +90,17 @@ def create_val_transforms(input_size: Tuple[int, int]) -> A.Compose:
         input_size: Tuple of (height, width) for input size
         
     Returns:
-        Albumentations Compose object with validation transforms
+        ComposeDetectionTransforms object with validation transforms
     """
     logger.info("Setting up validation transforms:")
-    transform = A.Compose(
-        [
-            A.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-                max_pixel_value=255.0,
-                p=1.0
-            ),
-            ToTensorV2(p=1.0)
-        ],
-        bbox_params=A.BboxParams(
-            format='yolo',
-            label_fields=['class_labels'],
-            min_visibility=0.3
-        )
-    )
-    logger.info("  - Added normalization and tensor conversion")
-    return transform
+    transforms = [
+        Resize(input_size),
+        Normalize()
+    ]
+    logger.info("  - Added resize and normalization")
+    return ComposeDetectionTransforms(transforms)
 
-def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> A.Compose:
+def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> ComposeDetectionTransforms:
     """
     Get transforms based on whether it's training or validation.
     
@@ -139,13 +110,13 @@ def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_train
         is_training: Boolean indicating if transforms are for training
         
     Returns:
-        Albumentations Compose object with appropriate transforms
+        ComposeDetectionTransforms object with appropriate transforms
     """
     if is_training:
         return create_train_transforms(config, input_size)
-    return create_val_transforms(input_size) 
+    return create_val_transforms(input_size)
 
-def visualize_augmentation(transform: A.Compose, image: np.ndarray, 
+def visualize_augmentation(transform: ComposeDetectionTransforms, image: np.ndarray, 
                          bboxes: List[List[float]], class_labels: List[int],
                          save_path: str) -> None:
     """
