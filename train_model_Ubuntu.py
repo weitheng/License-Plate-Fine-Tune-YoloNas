@@ -28,6 +28,14 @@ import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
 
+# Constants for dataset validation
+EXPECTED_LP_TRAIN = 25470
+EXPECTED_LP_VAL = 1073
+EXPECTED_COCO_TRAIN = 85000
+EXPECTED_COCO_VAL = 5000
+EXPECTED_TOTAL_TRAIN = EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN  # 85000 + 25470 = 110470
+EXPECTED_TOTAL_VAL = EXPECTED_COCO_VAL + EXPECTED_LP_VAL  # 5000 + 1073 = 6073
+
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
     # Format for both file and terminal
@@ -111,7 +119,7 @@ def download_model_weights(model_name: str, target_path: str) -> bool:
             logger.error(f"Failed to download from {url}: {e}")
     return False
 
-def download_coco_subset(target_dir, num_images=70000):
+def download_coco_subset(target_dir, num_images=85000):
     """Download a subset of COCO dataset"""
     try:
         # Create directories for COCO structure
@@ -177,7 +185,7 @@ def download_coco_subset(target_dir, num_images=70000):
         logger.error(f"Error in COCO dataset download: {e}")
         return False
 
-def validate_coco_structure(coco_dir, num_images=70000):
+def validate_coco_structure(coco_dir, num_images=85000):
     """Validate COCO dataset directory structure and contents"""
     logger.info("Validating COCO dataset structure...")
     
@@ -305,7 +313,7 @@ def diagnose_coco_dataset(coco_dir):
     
     logger.info("=== Diagnosis Complete ===")
     
-def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=70000) -> None:
+def convert_coco_to_yolo(coco_dir: str, target_dir: str, num_images=85000) -> None:
     """Convert COCO annotations to YOLO format and copy corresponding images"""
     try:
         # Add validation of input paths
@@ -556,14 +564,6 @@ def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> D
     """
     logger.info("Validating final dataset structure...")
     
-    # Define expected counts
-    EXPECTED_LP_TRAIN = 25470
-    EXPECTED_LP_VAL = 1073
-    EXPECTED_COCO_TRAIN = 70000
-    EXPECTED_COCO_VAL = 5000
-    EXPECTED_TOTAL_TRAIN = EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN
-    EXPECTED_TOTAL_VAL = EXPECTED_COCO_VAL + EXPECTED_LP_VAL
-    
     stats = {
         'train': {'total': 0},
         'val': {'total': 0}
@@ -650,7 +650,7 @@ def prepare_combined_dataset() -> None:
             if not download_coco_subset('./data'):
                 raise RuntimeError("Failed to download COCO dataset")
                 
-            if not validate_coco_structure(coco_dir, num_images=70000):
+            if not validate_coco_structure(coco_dir, num_images=85000):
                 diagnose_coco_dataset(coco_dir)
                 raise RuntimeError("Downloaded COCO dataset is invalid or corrupt")
 
@@ -675,7 +675,7 @@ def prepare_combined_dataset() -> None:
         logger.info("Step 4/4: Checking license plate data...")
         expected_lp_train = 25470
         expected_lp_val = 1073
-        expected_total_train = 95470  # 70000 COCO + 25470 license plate images
+        expected_total_train = 95470  # 85000 COCO + 25470 license plate images
         expected_total_val = 6073   # 5000 COCO + 1073 license plate images
         
         # Check existing images in combined directory
@@ -692,7 +692,7 @@ def prepare_combined_dataset() -> None:
             val_coco_images = total_val_images - val_lp_images
             
             logger.info("\n=== Final Dataset Verification ===")
-            logger.info(f"COCO Training: {train_coco_images}/70000")
+            logger.info(f"COCO Training: {train_coco_images}/85000")
             logger.info(f"COCO Validation: {val_coco_images}/5000")
             logger.info(f"License Plate Training: {train_lp_images}/{expected_lp_train}")
             logger.info(f"License Plate Validation: {val_lp_images}/{expected_lp_val}")
@@ -700,8 +700,8 @@ def prepare_combined_dataset() -> None:
             logger.info(f"Total Validation: {total_val_images}/{expected_total_val}")
             
             # First verify/fix COCO dataset
-            if train_coco_images < 70000:
-                logger.warning(f"Missing COCO training images. Found {train_coco_images}/70000")
+            if train_coco_images < 85000:
+                logger.warning(f"Missing COCO training images. Found {train_coco_images}/85000")
                 # Trigger COCO dataset processing
                 raise RuntimeError("Incomplete COCO dataset")
             
@@ -1315,8 +1315,8 @@ def main():
 
         # Only proceed with training if validation passes
         if args.skip_lp_checks:
-            if dataset_stats['train']['total'] < 70000:  # Minimum expected total
-                raise RuntimeError(f"Insufficient training images: {dataset_stats['train']['total']}/70000")
+            if dataset_stats['train']['total'] < 85000:  # Minimum expected total
+                raise RuntimeError(f"Insufficient training images: {dataset_stats['train']['total']}/85000")
         else:
             if dataset_stats['train']['total'] != EXPECTED_TOTAL_TRAIN:
                 raise RuntimeError(
