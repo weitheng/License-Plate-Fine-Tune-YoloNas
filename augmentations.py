@@ -200,17 +200,16 @@ class DetectionMotionBlur(DetectionTransform):
             )
         
         return cv2.filter2D(image.astype(np.float32), -1, kernel).astype(np.uint8)
-    def __call__(self, image, target):
+
+    def apply_to_sample(self, sample):
         try:
             if random.random() < self.prob:
-                image = self.apply_motion_blur(image)
-            return image, target
+                sample.image = self.apply_motion_blur(sample.image)
+            return sample
         except Exception as e:
             logger.warning(f"Error applying motion blur: {e}")
-            return image, target
-    def __del__(self):
-        if hasattr(self, 'kernel'):
-            del self.kernel
+            return sample
+
 class DetectionNoise(DetectionTransform):
     """Add random noise to simulate low-light conditions"""
     def __init__(self, mean=0.0, std=0.1, prob=0.3):
@@ -218,17 +217,21 @@ class DetectionNoise(DetectionTransform):
         self.mean = mean
         self.std = std
         self.prob = prob
+
     def add_noise(self, image):
         noise = np.random.normal(self.mean, self.std, image.shape)
-        noisy_image = image + noise
+        noisy_image = image.astype(np.float32) + noise * 255.0
         return np.clip(noisy_image, 0, 255).astype(np.uint8)
-    def __call__(self, image, target):
-        if random.random() < self.prob:
-            image = self.add_noise(image)
-        return image, target
-    def __del__(self):
-        if hasattr(self, 'noise'):
-            del self.noise
+
+    def apply_to_sample(self, sample):
+        try:
+            if random.random() < self.prob:
+                sample.image = self.add_noise(sample.image)
+            return sample
+        except Exception as e:
+            logger.error(f"Error in Noise: {e}")
+            return sample
+
 class DetectionWeatherEffects(DetectionTransform):
     """Add weather effects like rain and fog"""
     def __init__(self, rain_intensity=0.2, fog_coef=0.1, prob=0.3):
@@ -236,20 +239,18 @@ class DetectionWeatherEffects(DetectionTransform):
         self.rain_intensity = rain_intensity
         self.fog_coef = fog_coef
         self.prob = prob
+
     def add_rain(self, image):
         h, w = image.shape[:2]
-        # Create rain streaks
         rain_drops = np.random.random((h, w)) < self.rain_intensity
         streak_length = random.randint(10, 20)
         angle = random.uniform(-20, -10)  # Typical rain angle
         
-        # Create rain streak effect
         rain_layer = np.zeros_like(rain_drops)
         for i in range(streak_length):
             shifted = np.roll(rain_drops, i)
             rain_layer = rain_layer | ndimage.rotate(shifted, angle, reshape=False)
         
-        # Add brightness variation
         brightness = np.random.uniform(0.8, 1.2)
         rain_effect = image.copy()
         rain_effect[rain_layer] = np.minimum(
@@ -257,22 +258,24 @@ class DetectionWeatherEffects(DetectionTransform):
             255
         )
         
-        # Add slight blur to simulate rain
         return cv2.GaussianBlur(rain_effect, (3, 3), 0)
+
     def add_fog(self, image):
         fog = np.ones_like(image) * 255
         return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
-    def __call__(self, image, target):
-        if random.random() < self.prob:
-            effect = random.choice(['rain', 'fog'])
-            if effect == 'rain':
-                image = self.add_rain(image)
-            else:
-                image = self.add_fog(image)
-        return image, target
-    def __del__(self):
-        if hasattr(self, 'rain_effect'):
-            del self.rain_effect
+
+    def apply_to_sample(self, sample):
+        try:
+            if random.random() < self.prob:
+                effect = random.choice(['rain', 'fog'])
+                if effect == 'rain':
+                    sample.image = self.add_rain(sample.image)
+                else:
+                    sample.image = self.add_fog(sample.image)
+            return sample
+        except Exception as e:
+            logger.error(f"Error in WeatherEffects: {e}")
+            return sample
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
