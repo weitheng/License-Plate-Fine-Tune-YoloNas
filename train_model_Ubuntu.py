@@ -552,14 +552,11 @@ def parse_args():
               %(prog)s --no-resume  # Start training from scratch
               %(prog)s --skip-lp-checks --no-resume  # Skip checks and start fresh
             Note: Use --skip-lp-checks only if you have already run remove_prefix.py
-              %(prog)s --skip-visualizations  # Skip augmentation visualizations
             '''))
     parser.add_argument('--skip-lp-checks', action='store_true',
                        help='Skip license plate dataset checks and prefix removal (use if already processed)')
     parser.add_argument('--no-resume', action='store_true',
                        help='Start training from scratch instead of resuming from checkpoint')
-    parser.add_argument('--skip-visualizations', action='store_true',
-                       help='Skip generating augmentation visualizations')
     return parser.parse_args()
 
 def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> Dict[str, Dict[str, int]]:
@@ -1590,15 +1587,6 @@ def main():
         
         if args.skip_lp_checks:
             logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
-        
-        if not args.skip_visualizations:
-            logger.info("Generating augmentation visualizations...")
-            visualize_sample_augmentations(
-                dataset_dir=combined_dir,
-                config=dataset_config,
-                input_size=config.input_size,
-                experiment_name='coco_license_plate_detection'
-            )
         
         trainer.train(
             model=model,

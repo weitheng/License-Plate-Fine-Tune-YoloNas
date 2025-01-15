@@ -1,11 +1,12 @@
-from super_gradients.training.transforms.transforms import (
-    Resize,
-    HorizontalFlip,
+from super_gradients.training.transforms import (
+    DetectionTransform, 
+    Resize, 
+    HorizontalFlip, 
     Normalize,
-    RandomBrightnessContrast,
-    RandomBlur,
-    DetectionTransform,
-    ComposeDetectionTransforms
+    DetectionHSV,
+    DetectionMosaic,
+    DetectionRandomAffine,
+    ComposeTransforms
 )
 from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
@@ -28,7 +29,7 @@ def validate_aug_config(config: Dict[str, Any]) -> None:
         if 'p' in aug_params and not (0 <= aug_params['p'] <= 1):
             raise ValueError(f"Invalid probability for {aug_name}: must be between 0 and 1")
 
-def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> ComposeDetectionTransforms:
+def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> ComposeTransforms:
     """
     Create training transforms based on config.
     
@@ -37,7 +38,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         input_size: Tuple of (height, width) for input size
         
     Returns:
-        ComposeDetectionTransforms object with transforms
+        ComposeTransforms object with transforms
     """
     # Validate config first
     validate_aug_config(config)
@@ -50,39 +51,56 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     logger.info("Setting up training augmentations:")
     
     # Add resize as first transform
-    transforms.append(Resize(input_size))
+    transforms.append(Resize(
+        size=input_size,
+        preserve_aspect_ratio=True
+    ))
     logger.info(f"  - Resize to {input_size}")
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
-        transforms.append(HorizontalFlip(p=p))
+        transforms.append(HorizontalFlip(prob=p))
         logger.info(f"  - Horizontal Flip (p={p})")
     
-    if aug_config.get('brightness_contrast', {}).get('enabled', False):
-        brightness = aug_config['brightness_contrast'].get('brightness_limit', 0.2)
-        contrast = aug_config['brightness_contrast'].get('contrast_limit', 0.2)
-        p = aug_config['brightness_contrast'].get('p', 0.5)
-        transforms.append(RandomBrightnessContrast(
-            brightness_limit=brightness,
-            contrast_limit=contrast,
-            p=p
+    # Add HSV augmentation
+    if aug_config.get('hsv', {}).get('enabled', False):
+        transforms.append(DetectionHSV(
+            prob=aug_config['hsv'].get('p', 0.5),
+            hgain=aug_config['hsv'].get('hgain', 0.015),
+            sgain=aug_config['hsv'].get('sgain', 0.7),
+            vgain=aug_config['hsv'].get('vgain', 0.4)
         ))
-        logger.info(f"  - Brightness/Contrast (brightness_limit={brightness}, contrast_limit={contrast}, p={p})")
-    
-    if aug_config.get('blur', {}).get('enabled', False):
-        blur_limit = aug_config['blur'].get('blur_limit', 3)
-        p = aug_config['blur'].get('p', 0.3)
-        transforms.append(RandomBlur(blur_limit=blur_limit, p=p))
-        logger.info(f"  - Blur (blur_limit={blur_limit}, p={p})")
+        logger.info("  - HSV augmentation")
+
+    # Add Mosaic augmentation
+    if aug_config.get('mosaic', {}).get('enabled', False):
+        transforms.append(DetectionMosaic(
+            input_dim=input_size,
+            prob=aug_config['mosaic'].get('p', 0.5)
+        ))
+        logger.info("  - Mosaic augmentation")
+
+    # Add random affine
+    if aug_config.get('affine', {}).get('enabled', False):
+        transforms.append(DetectionRandomAffine(
+            degrees=aug_config['affine'].get('degrees', 10.0),
+            scales=aug_config['affine'].get('scales', 0.1),
+            shear=aug_config['affine'].get('shear', 10.0),
+            target_size=input_size
+        ))
+        logger.info("  - Random affine")
     
     # Always include normalization
     transforms.append(Normalize())
     logger.info("  - Added normalization")
     
-    return ComposeDetectionTransforms(transforms)
+    # Create the composition
+    transform = ComposeTransforms(transforms)
+    
+    return transform
 
-def create_val_transforms(input_size: Tuple[int, int]) -> ComposeDetectionTransforms:
+def create_val_transforms(input_size: Tuple[int, int]) -> ComposeTransforms:
     """
     Create validation transforms.
     
@@ -90,17 +108,17 @@ def create_val_transforms(input_size: Tuple[int, int]) -> ComposeDetectionTransf
         input_size: Tuple of (height, width) for input size
         
     Returns:
-        ComposeDetectionTransforms object with validation transforms
+        ComposeTransforms object with validation transforms
     """
     logger.info("Setting up validation transforms:")
-    transforms = [
-        Resize(input_size),
+    transform = ComposeTransforms([
+        Resize(size=input_size, preserve_aspect_ratio=True),
         Normalize()
-    ]
+    ])
     logger.info("  - Added resize and normalization")
-    return ComposeDetectionTransforms(transforms)
+    return transform
 
-def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> ComposeDetectionTransforms:
+def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> ComposeTransforms:
     """
     Get transforms based on whether it's training or validation.
     
@@ -110,35 +128,40 @@ def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_train
         is_training: Boolean indicating if transforms are for training
         
     Returns:
-        ComposeDetectionTransforms object with appropriate transforms
+        ComposeTransforms object with appropriate transforms
     """
     if is_training:
         return create_train_transforms(config, input_size)
     return create_val_transforms(input_size)
 
-def visualize_augmentation(transform: ComposeDetectionTransforms, image: np.ndarray, 
+def visualize_augmentation(transform: ComposeTransforms, image: np.ndarray, 
                          bboxes: List[List[float]], class_labels: List[int],
                          save_path: str) -> None:
     """
     Visualize augmentation results for debugging.
     
     Args:
-        transform: Albumentations transform
+        transform: SuperGradients ComposeTransforms
         image: Input image
-        bboxes: List of bounding boxes in YOLO format
+        bboxes: List of bounding boxes in XYXY format
         class_labels: List of class labels
         save_path: Path to save visualization
     """
     try:
         import cv2
         import matplotlib.pyplot as plt
+        from super_gradients.training.datasets.detection_datasets.detection_dataset import DetectionSample
+        
+        # Create DetectionSample
+        sample = DetectionSample(
+            image=image,
+            bboxes_xyxy=np.array(bboxes),
+            labels=np.array(class_labels),
+            is_crowd=np.zeros(len(bboxes), dtype=bool)
+        )
         
         # Apply transform
-        transformed = transform(
-            image=image,
-            bboxes=bboxes,
-            class_labels=class_labels
-        )
+        transformed = transform.apply_to_sample(sample)
         
         # Draw original
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
@@ -146,20 +169,20 @@ def visualize_augmentation(transform: ComposeDetectionTransforms, image: np.ndar
         # Original image with boxes
         ax1.imshow(image)
         for bbox in bboxes:
-            x, y, w, h = bbox
+            x1, y1, x2, y2 = bbox
             rect = plt.Rectangle(
-                (x - w/2, y - h/2), w, h,
+                (x1, y1), x2-x1, y2-y1,
                 fill=False, color='red'
             )
             ax1.add_patch(rect)
         ax1.set_title('Original')
         
         # Augmented image with boxes
-        ax2.imshow(transformed['image'])
-        for bbox in transformed['bboxes']:
-            x, y, w, h = bbox
+        ax2.imshow(transformed.image)
+        for bbox in transformed.bboxes_xyxy:
+            x1, y1, x2, y2 = bbox
             rect = plt.Rectangle(
-                (x - w/2, y - h/2), w, h,
+                (x1, y1), x2-x1, y2-y1,
                 fill=False, color='red'
             )
             ax2.add_patch(rect)
@@ -170,7 +193,7 @@ def visualize_augmentation(transform: ComposeDetectionTransforms, image: np.ndar
         
         logger.info(f"Saved augmentation visualization to {save_path}")
     except Exception as e:
-        logger.error(f"Failed to visualize augmentation: {e}") 
+        logger.error(f"Failed to visualize augmentation: {e}")
 
 def setup_visualization_dir(base_dir: str, experiment_name: str) -> str:
     """
@@ -211,4 +234,4 @@ def setup_visualization_dir(base_dir: str, experiment_name: str) -> str:
     
     os.makedirs(vis_dir, exist_ok=True)
     logger.info(f"Created visualization directory: {vis_dir}")
-    return vis_dir 
+    return vis_dir
