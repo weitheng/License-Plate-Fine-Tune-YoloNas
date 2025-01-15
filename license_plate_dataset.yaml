@@ -89,7 +89,6 @@ test: images/test    # Path to test images
 augmentation:
   horizontal_flip:
     enabled: false
-    p: 0.5
   hsv:
     enabled: true
     p: 0.5
@@ -97,25 +96,24 @@ augmentation:
     sgain: 0.3
     vgain: 0.2
   mosaic:
-    enabled: true
-    p: 0.5
+    enabled: false  # Disable mosaic temporarily
   affine:
     enabled: true
-    degrees: 5.0
+    degrees: 3.0    # Reduced rotation
     scales: 0.1
-    shear: 5.0
+    shear: 3.0      # Reduced shear
   motion_blur:
     enabled: true
-    p: 0.3
-    kernel_size: 7     # Size of the motion blur kernel
-    angle: 0.0         # Angle of motion (0 for horizontal motion)
+    p: 0.2          # Reduced probability
+    kernel_size: 7
+    angle: 0.0
+  weather:
+    enabled: true
+    p: 0.2          # Reduced probability
+    rain_intensity: 0.2
+    fog_coef: 0.1
   noise:
     enabled: true
     p: 0.3
     mean: 0.0
     std: 0.1          # Controls noise intensity
-  weather:
-    enabled: true
-    p: 0.3
-    rain_intensity: 0.2
-    fog_coef: 0.1

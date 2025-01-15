@@ -226,13 +226,14 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     # Add debug transform at the start
     transforms.append(DebugTransform("Initial"))
     
-    # Add existing transforms
+    # Add existing transforms with validation
     transforms.append(DetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
     logger.info(f"  - Padded rescale to {input_size}")
-    
+    transforms.append(DebugTransform("Post-Rescale"))
+
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
@@ -241,7 +242,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     # Add HSV augmentation
     if aug_config.get('hsv', {}).get('enabled', False):
-        transforms.append(DebugTransform("Pre-HSV"))  # Add debug transform to check image state
+        transforms.append(DebugTransform("Pre-HSV"))
         transforms.append(DetectionTargetsFormatTransform(input_format='xyxy', output_format='yxyx'))
         transforms.append(DetectionHSV(
             prob=aug_config['hsv'].get('p', 0.5),
@@ -250,10 +251,10 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             vgain=aug_config['hsv'].get('vgain', 0.2)
         ))
         transforms.append(DetectionTargetsFormatTransform(input_format='yxyx', output_format='xyxy'))
-        transforms.append(DebugTransform("Post-HSV"))  # Add debug transform to verify
+        transforms.append(DebugTransform("Post-HSV"))
         logger.info("  - HSV augmentation")
 
-    # Add Mosaic augmentation
+    # Add Mosaic augmentation if enabled
     if aug_config.get('mosaic', {}).get('enabled', False):
         transforms.append(DetectionMosaic(
             input_dim=input_size,
@@ -261,26 +262,27 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         ))
         logger.info("  - Mosaic augmentation")
 
-    # Add debug transforms between major transformations
+    # Add affine transformation with additional checks
     transforms.append(DebugTransform("Pre-Affine"))
     if aug_config.get('affine', {}).get('enabled', False):
         transforms.append(DetectionRandomAffine(
             degrees=aug_config['affine'].get('degrees', 5.0),
             scales=aug_config['affine'].get('scales', 0.1),
             shear=aug_config['affine'].get('shear', 5.0),
-            target_size=input_size
+            target_size=input_size,
+            border_value=114  # Explicitly set border value
         ))
     transforms.append(DebugTransform("Post-Affine"))
     
-    # Add new CCTV-specific augmentations
+    # Add custom augmentations with reduced probability
     if aug_config.get('motion_blur', {}).get('enabled', False):
         transforms.append(DetectionMotionBlur(
             kernel_size=aug_config['motion_blur'].get('kernel_size', 7),
             angle=aug_config['motion_blur'].get('angle', 0.0),
-            prob=aug_config['motion_blur'].get('p', 0.3)
+            prob=0.2  # Reduced probability
         ))
         logger.info("  - Motion blur augmentation")
-
+    
     if aug_config.get('noise', {}).get('enabled', False):
         transforms.append(DetectionNoise(
             mean=aug_config['noise'].get('mean', 0.0),
@@ -288,17 +290,18 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             prob=aug_config['noise'].get('p', 0.3)
         ))
         logger.info("  - Noise augmentation")
-
+    
     if aug_config.get('weather', {}).get('enabled', False):
         transforms.append(DetectionWeatherEffects(
             rain_intensity=aug_config['weather'].get('rain_intensity', 0.2),
             fog_coef=aug_config['weather'].get('fog_coef', 0.1),
-            prob=aug_config['weather'].get('p', 0.3)
+            prob=0.2  # Reduced probability
         ))
         logger.info("  - Weather effects augmentation")
     
-    # Always include standardization (replaces normalization)
+    # Always include standardization at the end
     transforms.append(DetectionStandardize(max_value=255.0))
+    transforms.append(DebugTransform("Final"))
     logger.info("  - Added standardization")
     
     return transforms
@@ -332,10 +335,14 @@ def validate_image(image, transform_name="Unknown"):
         raise ValueError(f"{transform_name}: Image must be uint8, got {image.dtype}")
     if len(image.shape) not in [2, 3]:
         raise ValueError(f"{transform_name}: Image must be 2D or 3D array, got shape {image.shape}")
-    if len(image.shape) == 3 and image.shape[2] not in [1, 3, 4]:
-        logger.warning(f"{transform_name}: Unusual number of channels: {image.shape[2]}. Expected 1, 3, or 4.")
     if image.shape[0] <= 0 or image.shape[1] <= 0:
         raise ValueError(f"{transform_name}: Image has invalid dimensions: {image.shape}")
+    if len(image.shape) == 3 and image.shape[2] not in [1, 3, 4]:
+        logger.warning(f"{transform_name}: Unusual number of channels: {image.shape[2]}. Expected 1, 3, or 4.")
+    
+    # Add more detailed dimension logging
+    logger.debug(f"{transform_name}: Image dimensions - Height: {image.shape[0]}, Width: {image.shape[1]}, " + 
+                f"Channels: {image.shape[2] if len(image.shape) > 2 else 1}")
 
 def verify_image_file(image_path: str) -> bool:
     """Verify if image file is valid"""
