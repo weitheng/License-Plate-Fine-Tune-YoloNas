@@ -27,6 +27,7 @@ from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 import argparse
 from remove_prefix import remove_lp_prefix
 import textwrap
+from augmentations import get_transforms
 
 # Constants for dataset validation
 EXPECTED_LP_TRAIN = 25470
@@ -1454,6 +1455,7 @@ def main():
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
+                'transforms': get_transforms(dataset_config, config.input_size, is_training=True)
             },
             dataloader_params={
                 'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
@@ -1471,6 +1473,7 @@ def main():
                 'labels_dir': 'labels/val',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
+                'transforms': get_transforms(dataset_config, config.input_size, is_training=False)
             },
             dataloader_params={
                 'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,

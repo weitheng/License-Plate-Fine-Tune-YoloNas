@@ -84,3 +84,18 @@ nc: 81  # 80 COCO classes + 1 license plate class
 train: images/train  # Path to training images
 val: images/val      # Path to validation images
 test: images/test    # Path to test images
+
+# Data augmentation parameters
+augmentation:
+  horizontal_flip:
+    enabled: true
+    p: 0.5
+  brightness_contrast:
+    enabled: true
+    brightness_limit: 0.2
+    contrast_limit: 0.2
+    p: 0.5
+  blur:
+    enabled: true
+    blur_limit: 3
+    p: 0.3
