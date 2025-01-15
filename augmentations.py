@@ -79,11 +79,12 @@ class DetectionMotionBlur(DetectionTransform):
 
     def __call__(self, image, target):
         try:
+            validate_image(image, "MotionBlur")
             if random.random() < self.prob:
                 image = self.apply_motion_blur(image)
             return image, target
         except Exception as e:
-            logger.warning(f"Error applying motion blur: {e}")
+            logger.error(f"Error in MotionBlur: {e}")
             return image, target
 
     def __del__(self):
@@ -104,9 +105,14 @@ class DetectionNoise(DetectionTransform):
         return np.clip(noisy_image, 0, 255).astype(np.uint8)
 
     def __call__(self, image, target):
-        if random.random() < self.prob:
-            image = self.add_noise(image)
-        return image, target
+        try:
+            validate_image(image, "Noise")
+            if random.random() < self.prob:
+                image = self.add_noise(image)
+            return image, target
+        except Exception as e:
+            logger.error(f"Error in Noise: {e}")
+            return image, target
 
     def __del__(self):
         if hasattr(self, 'noise'):
@@ -149,17 +155,37 @@ class DetectionWeatherEffects(DetectionTransform):
         return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
 
     def __call__(self, image, target):
-        if random.random() < self.prob:
-            effect = random.choice(['rain', 'fog'])
-            if effect == 'rain':
-                image = self.add_rain(image)
-            else:
-                image = self.add_fog(image)
-        return image, target
+        try:
+            validate_image(image, "WeatherEffects")
+            if random.random() < self.prob:
+                effect = random.choice(['rain', 'fog'])
+                if effect == 'rain':
+                    image = self.add_rain(image)
+                else:
+                    image = self.add_fog(image)
+            return image, target
+        except Exception as e:
+            logger.error(f"Error in WeatherEffects: {e}")
+            return image, target
 
     def __del__(self):
         if hasattr(self, 'rain_effect'):
             del self.rain_effect
+
+class DebugTransform(DetectionTransform):
+    """Debug transform to log image properties"""
+    def __init__(self, name="Debug"):
+        super().__init__()
+        self.name = name
+
+    def __call__(self, image, target):
+        try:
+            logger.debug(f"{self.name} - Image shape: {image.shape}, dtype: {image.dtype}")
+            validate_image(image, self.name)
+            return image, target
+        except Exception as e:
+            logger.error(f"Error in {self.name}: {e}")
+            return image, target
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
@@ -168,6 +194,9 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     aug_config = config.get('augmentation', {})
     
     logger.info("Setting up training augmentations:")
+    
+    # Add debug transform at the start
+    transforms.append(DebugTransform("Initial"))
     
     # Add existing transforms
     transforms.append(DetectionPaddedRescale(
@@ -200,7 +229,8 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         ))
         logger.info("  - Mosaic augmentation")
 
-    # Add random affine
+    # Add debug transforms between major transformations
+    transforms.append(DebugTransform("Pre-Affine"))
     if aug_config.get('affine', {}).get('enabled', False):
         transforms.append(DetectionRandomAffine(
             degrees=aug_config['affine'].get('degrees', 5.0),
@@ -208,7 +238,8 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             shear=aug_config['affine'].get('shear', 5.0),
             target_size=input_size
         ))
-        logger.info("  - Random affine")
+    transforms.append(DebugTransform("Post-Affine"))
+    
     # Add new CCTV-specific augmentations
     if aug_config.get('motion_blur', {}).get('enabled', False):
         transforms.append(DetectionMotionBlur(
@@ -244,8 +275,11 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
     """Create validation transforms."""
     logger.info("Setting up validation transforms:")
     transforms = [
+        DebugTransform("Initial-Val"),
         DetectionPaddedRescale(input_dim=input_size, pad_value=114),
-        DetectionStandardize(max_value=255.0)
+        DebugTransform("Post-Rescale-Val"),
+        DetectionStandardize(max_value=255.0),
+        DebugTransform("Final-Val")
     ]
     logger.info("  - Added rescale and standardization")
     return transforms
@@ -256,11 +290,30 @@ def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_train
         return create_train_transforms(config, input_size)
     return create_val_transforms(input_size)
 
-def validate_image(image):
+def validate_image(image, transform_name="Unknown"):
     """Validate image before applying transforms"""
+    if image is None:
+        raise ValueError(f"{transform_name}: Image is None")
     if not isinstance(image, np.ndarray):
-        raise ValueError("Image must be a numpy array")
+        raise ValueError(f"{transform_name}: Image must be a numpy array, got {type(image)}")
     if image.dtype != np.uint8:
-        raise ValueError("Image must be uint8")
+        raise ValueError(f"{transform_name}: Image must be uint8, got {image.dtype}")
     if len(image.shape) not in [2, 3]:
-        raise ValueError("Image must be 2D or 3D array")
+        raise ValueError(f"{transform_name}: Image must be 2D or 3D array, got shape {image.shape}")
+    if image.shape[0] <= 0 or image.shape[1] <= 0:
+        raise ValueError(f"{transform_name}: Image has invalid dimensions: {image.shape}")
+
+def verify_image_file(image_path: str) -> bool:
+    """Verify if image file is valid"""
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            logger.error(f"Failed to read image: {image_path}")
+            return False
+        if img.size == 0:
+            logger.error(f"Empty image: {image_path}")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Error reading image {image_path}: {e}")
+        return False
