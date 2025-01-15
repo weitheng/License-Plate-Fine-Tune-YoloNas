@@ -257,6 +257,17 @@ class TypeDebugTransform(DetectionTransform):
             logger.error(f"Error in {self.name}: {e}")
             return sample_dict
 
+# Add this new class
+class DetectionUint8Convert(DetectionTransform):
+    """Convert image to uint8 format"""
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, sample_dict):
+        image = sample_dict['image']
+        sample_dict['image'] = (image * 255).clip(0, 255).astype(np.uint8)
+        return sample_dict
+
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
@@ -274,9 +285,9 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         pad_value=114
     ))
     logger.info(f"  - Padded rescale to {input_size}")
-    # Convert to uint8 after rescale
-    transforms.append(lambda x: {'image': (x['image'] * 255).clip(0, 255).astype(np.uint8), 
-                               **{k: v for k, v in x.items() if k != 'image'}})
+    
+    # Replace lambda with proper transform class
+    transforms.append(DetectionUint8Convert())
     
     # Basic augmentations based on config
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
