@@ -140,6 +140,36 @@ class SafeDetectionHSV(DetectionHSV):
             logger.error(f"Image shape: {sample.image.shape if hasattr(sample, 'image') else 'No image'}")
             raise
 
+class SafeDetectionPaddedRescale(DetectionPaddedRescale):
+    """Safe version of DetectionPaddedRescale that ensures correct image format"""
+    def apply_to_sample(self, sample):
+        try:
+            image = sample.image
+            
+            # Ensure image is in channels-last format (H, W, C)
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                logger.info("Converting channels-first to channels-last before rescale")
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Ensure image is in uint8 format
+            if image.dtype != np.uint8:
+                if image.max() <= 1.0:
+                    image = (image * 255).astype(np.uint8)
+                else:
+                    image = image.astype(np.uint8)
+            
+            # Store the corrected image
+            sample.image = image
+            
+            # Apply the rescale transform
+            return super().apply_to_sample(sample)
+            
+        except Exception as e:
+            logger.error(f"Error in SafeDetectionPaddedRescale: {str(e)}")
+            logger.error(f"Image shape: {sample.image.shape if hasattr(sample, 'image') else 'No image'}")
+            logger.error(f"Image dtype: {sample.image.dtype if hasattr(sample, 'image') else 'No image'}")
+            raise
+
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
@@ -150,7 +180,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     # Always start with shape correction and rescale to ensure consistent size
     transforms.append(ImageShapeCorrection())
-    transforms.append(DetectionPaddedRescale(
+    transforms.append(SafeDetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
@@ -173,7 +203,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             prob=aug_config['mosaic'].get('p', 0.5)
         ))
         # Add rescale after mosaic to ensure consistent size
-        transforms.append(DetectionPaddedRescale(
+        transforms.append(SafeDetectionPaddedRescale(
             input_dim=input_size,
             pad_value=114
         ))
@@ -197,7 +227,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             logger.info("  - Random affine")
     
     # Final rescale to ensure consistent size
-    transforms.append(DetectionPaddedRescale(
+    transforms.append(SafeDetectionPaddedRescale(
         input_dim=input_size,
         pad_value=114
     ))
@@ -213,7 +243,7 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
     logger.info("Setting up validation transforms:")
     transforms = [
         ImageShapeCorrection(),
-        DetectionPaddedRescale(input_dim=input_size, pad_value=114),
+        SafeDetectionPaddedRescale(input_dim=input_size, pad_value=114),
         DetectionStandardize(max_value=255.0)
     ]
     logger.info("  - Added shape correction, rescale and standardization")
