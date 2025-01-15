@@ -59,6 +59,9 @@ class DetectionMotionBlur(DetectionTransform):
         self._kernel_cache = {}  # Cache for kernels
 
     def apply_motion_blur(self, image):
+        # Ensure image is RGB
+        image = ensure_rgb_format(image)
+        
         # Add random angle variation for more realistic motion
         actual_angle = self.angle + random.uniform(-15, 15) if self.angle != 0 else 0
         kernel = np.zeros((self.kernel_size, self.kernel_size))
@@ -75,14 +78,20 @@ class DetectionMotionBlur(DetectionTransform):
                 (self.kernel_size, self.kernel_size)
             )
         
-        return cv2.filter2D(image.astype(np.float32), -1, kernel).astype(np.uint8)
+        # Apply blur to each channel separately
+        result = np.zeros_like(image)
+        for i in range(3):
+            result[:,:,i] = cv2.filter2D(image[:,:,i].astype(np.float32), -1, kernel).astype(np.uint8)
+        return result
 
     def __call__(self, sample_dict):
         try:
             image = sample_dict['image']
+            logger.debug(f"MotionBlur input shape: {image.shape}")
             validate_image(image, "MotionBlur")
             if random.random() < self.prob:
                 sample_dict['image'] = self.apply_motion_blur(image)
+            logger.debug(f"MotionBlur output shape: {sample_dict['image'].shape}")
             return sample_dict
         except Exception as e:
             logger.error(f"Error in MotionBlur: {e}")
@@ -130,16 +139,21 @@ class DetectionWeatherEffects(DetectionTransform):
 
     def add_rain(self, image):
         h, w = image.shape[:2]
-        # Create rain streaks
+        # Ensure image is RGB
+        image = ensure_rgb_format(image)
+        
+        # Create rain streaks (3 channels)
         rain_drops = np.random.random((h, w)) < self.rain_intensity
+        rain_drops = np.stack([rain_drops] * 3, axis=-1)  # Make 3-channel
         streak_length = random.randint(10, 20)
-        angle = random.uniform(-20, -10)  # Typical rain angle
+        angle = random.uniform(-20, -10)
         
         # Create rain streak effect
         rain_layer = np.zeros_like(rain_drops)
         for i in range(streak_length):
             shifted = np.roll(rain_drops, i)
-            rain_layer = rain_layer | ndimage.rotate(shifted, angle, reshape=False)
+            rotated = ndimage.rotate(shifted, angle, reshape=False)
+            rain_layer = rain_layer | rotated
         
         # Add brightness variation
         brightness = np.random.uniform(0.8, 1.2)
@@ -149,16 +163,18 @@ class DetectionWeatherEffects(DetectionTransform):
             255
         )
         
-        # Add slight blur to simulate rain
         return cv2.GaussianBlur(rain_effect, (3, 3), 0)
 
     def add_fog(self, image):
+        # Ensure image is RGB
+        image = ensure_rgb_format(image)
         fog = np.ones_like(image) * 255
         return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
 
     def __call__(self, sample_dict):
         try:
             image = sample_dict['image']
+            logger.debug(f"WeatherEffects input shape: {image.shape}")
             validate_image(image, "WeatherEffects")
             if random.random() < self.prob:
                 effect = random.choice(['rain', 'fog'])
@@ -166,6 +182,7 @@ class DetectionWeatherEffects(DetectionTransform):
                     sample_dict['image'] = self.add_rain(image)
                 else:
                     sample_dict['image'] = self.add_fog(image)
+            logger.debug(f"WeatherEffects output shape: {sample_dict['image'].shape}")
             return sample_dict
         except Exception as e:
             logger.error(f"Error in WeatherEffects: {e}")
@@ -190,6 +207,13 @@ class DebugTransform(DetectionTransform):
         except Exception as e:
             logger.error(f"Error in {self.name}: {e}")
             return sample_dict
+
+class DetectionHSV(DetectionTransform):
+    def __call__(self, sample_dict):
+        image = sample_dict['image']
+        image = ensure_rgb_format(image)  # Ensure correct format before HSV transform
+        sample_dict['image'] = image
+        return super().__call__(sample_dict)
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create training transforms based on config."""
@@ -217,12 +241,16 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     # Add HSV augmentation
     if aug_config.get('hsv', {}).get('enabled', False):
+        transforms.append(DebugTransform("Pre-HSV"))  # Add debug transform to check image state
+        transforms.append(DetectionTargetsFormatTransform(input_format='xyxy', output_format='yxyx'))
         transforms.append(DetectionHSV(
             prob=aug_config['hsv'].get('p', 0.5),
             hgain=aug_config['hsv'].get('hgain', 0.015),
             sgain=aug_config['hsv'].get('sgain', 0.3),
             vgain=aug_config['hsv'].get('vgain', 0.2)
         ))
+        transforms.append(DetectionTargetsFormatTransform(input_format='yxyx', output_format='xyxy'))
+        transforms.append(DebugTransform("Post-HSV"))  # Add debug transform to verify
         logger.info("  - HSV augmentation")
 
     # Add Mosaic augmentation
@@ -304,6 +332,8 @@ def validate_image(image, transform_name="Unknown"):
         raise ValueError(f"{transform_name}: Image must be uint8, got {image.dtype}")
     if len(image.shape) not in [2, 3]:
         raise ValueError(f"{transform_name}: Image must be 2D or 3D array, got shape {image.shape}")
+    if len(image.shape) == 3 and image.shape[2] not in [1, 3, 4]:
+        logger.warning(f"{transform_name}: Unusual number of channels: {image.shape[2]}. Expected 1, 3, or 4.")
     if image.shape[0] <= 0 or image.shape[1] <= 0:
         raise ValueError(f"{transform_name}: Image has invalid dimensions: {image.shape}")
 
@@ -321,3 +351,16 @@ def verify_image_file(image_path: str) -> bool:
     except Exception as e:
         logger.error(f"Error reading image {image_path}: {e}")
         return False
+
+def ensure_rgb_format(image):
+    """Ensure image is in RGB format with 3 channels"""
+    if len(image.shape) == 2:  # Grayscale
+        return cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    elif len(image.shape) == 3:
+        if image.shape[2] == 1:  # Single channel
+            return cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif image.shape[2] == 3:  # Already RGB
+            return image
+        elif image.shape[2] == 4:  # RGBA
+            return cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
+    return image[:, :, :3]  # Take first 3 channels if more than 4 channels
