@@ -415,7 +415,7 @@ class SafeDetectionRandomAffine(DetectionRandomAffine):
             logger.error(f"Image shape: {image.shape if hasattr(sample, 'image') else 'No image'}")
             return sample
 
-def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int], dataset=None) -> List[DetectionTransform]:
+def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int], dataloader=None) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
     transforms = []
@@ -459,8 +459,8 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int],
         transforms.append(SafeDetectionMosaic(
             input_dim=input_size,
             prob=aug_config['mosaic'].get('p', 0.5),
-            dataloader=dataset,  # Pass the dataloader
-            enable_memory_cache=True
+            dataloader=dataloader,  # Pass the dataloader
+            enable_memory_cache=True  # Enable caching
         ))
         # Ensure consistent size after mosaic
         transforms.append(SafeDetectionPaddedRescale(
@@ -685,13 +685,14 @@ class SafeDetectionTransform(DetectionTransform):
 
 class SafeDetectionMosaic(SafeDetectionTransform):
     """Safe mosaic augmentation with target validation and memory management"""
-    def __init__(self, input_dim, prob=0.5, dataloader=None):
+    def __init__(self, input_dim, prob=0.5, dataloader=None, enable_memory_cache=True):
         super().__init__()
         self.input_dim = input_dim
         self.prob = prob
         self.dataloader = dataloader
-        # Initialize cache with controlled size
-        self.cache = {}
+        self.enable_memory_cache = enable_memory_cache
+        # Initialize cache with controlled size if enabled
+        self.cache = {} if enable_memory_cache else None
         self.max_cache_size = min(100, len(dataloader.dataset) if dataloader else 0)  # Limit cache size
         self.cache_hits = 0
         self.cache_misses = 0
@@ -708,8 +709,8 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                 logger.error("Empty dataset in dataloader")
                 return None
             
-            # Try to get from cache first
-            if self.cache:
+            # Try to get from cache first if enabled
+            if self.enable_memory_cache and self.cache:
                 idx = random.choice(list(self.cache.keys()))
                 self.cache_hits += 1
                 if self.cache_hits % 1000 == 0:  # Log cache performance periodically
@@ -722,8 +723,8 @@ class SafeDetectionMosaic(SafeDetectionTransform):
             sample = dataset[idx]
             self.cache_misses += 1
             
-            # Cache the image if there's room
-            if len(self.cache) < self.max_cache_size:
+            # Cache the image if enabled and there's room
+            if self.enable_memory_cache and len(self.cache) < self.max_cache_size:
                 try:
                     # Ensure the image is in the right format before caching
                     img = self.validate_image(sample.image)
@@ -731,7 +732,7 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                         self.cache[idx] = img
                 except Exception as e:
                     logger.warning(f"Failed to cache image {idx}: {e}")
-            elif len(self.cache) >= self.max_cache_size and random.random() < 0.1:
+            elif self.enable_memory_cache and len(self.cache) >= self.max_cache_size and random.random() < 0.1:
                 # Occasionally remove a random item if cache is full
                 remove_key = random.choice(list(self.cache.keys()))
                 del self.cache[remove_key]
