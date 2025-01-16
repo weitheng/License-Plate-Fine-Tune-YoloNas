@@ -24,8 +24,8 @@ class TrainingConfig:
     num_epochs: int = 100
     batch_size: int = 32
     input_size: tuple = (640, 640)
-    initial_lr: float = 1e-4
-    warmup_epochs: int = 10
+    initial_lr: float = 8e-5
+    warmup_epochs: int = 15
     num_workers: int = 8
     
     # Model parameters
@@ -35,7 +35,7 @@ class TrainingConfig:
     
     # Training parameters
     early_stopping_patience: int = 10
-    weight_decay: float = 5e-4
+    weight_decay: float = 1e-3
     dropout: float = 0.1
     label_smoothing: float = 0.1
     
@@ -44,24 +44,24 @@ class TrainingConfig:
     nesterov: bool = True
     
     # Learning rate parameters
-    warmup_initial_lr_factor: float = 0.1  # Initial LR will be initial_lr * this factor
-    backbone_lr_factor: float = 0.05  # Backbone LR will be initial_lr * this factor
-    head_lr_factor: float = 0.1  # Head LR will be initial_lr * this factor
+    warmup_initial_lr_factor: float = 0.1
+    backbone_lr_factor: float = 0.1
+    head_lr_factor: float = 0.2
     lr_cooldown_epochs: int = 15
     
     # Advanced training parameters
-    gradient_clip_val: float = 1.0
+    gradient_clip_val: float = 0.5
     clip_grad_norm: float = 0.5
-    batch_accumulate: int = 8
-    ema_decay: float = 0.9997
+    batch_accumulate: int = 16
+    ema_decay: float = 0.9999
     
     # Export parameters
     export_image_size: tuple = (320, 320)
     
     # Add new stability parameters
-    min_lr: float = 1e-6
-    max_grad_norm: float = 10.0
-    warmup_momentum: float = 0.8
+    min_lr: float = 5e-7
+    max_grad_norm: float = 5.0
+    warmup_momentum: float = 0.95
     
     def validate(self):
         """Validate configuration parameters"""

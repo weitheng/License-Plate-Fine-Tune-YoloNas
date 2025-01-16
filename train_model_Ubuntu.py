@@ -398,23 +398,48 @@ def main():
         os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/pretrained_models.py')
         os.system('sed -i \'s/https:\/\/\/models/https:\/\/models/g\' /usr/local/lib/python3.10/dist-packages/super_gradients/training/utils/checkpoint_utils.py')
 
-        # Initialize model with COCO weights
+        # Initialize model with more careful initialization
         try:
             logger.info("Initializing model...")
             model = models.get(Models.YOLO_NAS_S, 
-                             num_classes=81,
-                             pretrained_weights="coco")
+                              num_classes=81,
+                              pretrained_weights="coco")
             
-            # Explicitly move model to GPU if available
+            # Initialize weights with more stable method
+            def init_weights(m):
+                if isinstance(m, (torch.nn.Conv2d, torch.nn.Linear)):
+                    torch.nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    if m.bias is not None:
+                        torch.nn.init.constant_(m.bias, 0)
+                elif isinstance(m, (torch.nn.BatchNorm2d, torch.nn.GroupNorm)):
+                    torch.nn.init.constant_(m.weight, 1)
+                    torch.nn.init.constant_(m.bias, 0)
+            
+            # Apply custom initialization only to new layers
+            for name, module in model.named_children():
+                if 'head' in name:  # Only initialize detection head
+                    module.apply(init_weights)
+            
+            # Enable gradient checkpointing for memory efficiency
+            if hasattr(model, 'use_gradient_checkpointing'):
+                model.use_gradient_checkpointing()
+            
             if torch.cuda.is_available():
                 model = model.cuda()
-                model = torch.compile(model)  # Use torch.compile for PyTorch 2.0+
+                # Use channels_last memory format for better performance
+                model = model.to(memory_format=torch.channels_last)
+                model = torch.compile(model, mode='reduce-overhead')
                 model.train()
-                torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
+                
+                # Enable cuDNN benchmarking and deterministic mode
+                torch.backends.cudnn.benchmark = True
+                torch.backends.cudnn.deterministic = False
                 torch.backends.cudnn.enabled = True
-                logger.info("Model moved to GPU")
+                
+                # Set more conservative memory settings
+                torch.cuda.empty_cache()
+                torch.cuda.set_per_process_memory_fraction(0.85)
             
-            # Verify model device
             logger.info(f"Model device: {next(model.parameters()).device}")
             logger.success("✓ Model initialized successfully")
         except Exception as e:
@@ -427,12 +452,19 @@ def main():
             logger.info(f"Initial GPU memory allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB")
             logger.info(f"Initial GPU memory cached: {torch.cuda.memory_reserved()/1e9:.2f} GB")
 
-        # Define loss function
+        # Define loss function with more stable parameters
         loss_fn = PPYoloELoss(
-            use_static_assigner=False,
+            use_static_assigner=True,  # Changed to True for more stability
             num_classes=81,
             reg_max=16,
-            iou_loss_weight=3.0
+            iou_loss_weight=2.0,  # Reduced from 3.0
+            loss_weight={
+                'class': 1.0,
+                'iou': 2.0,
+                'dfl': 0.5  # Reduced from 1.0
+            },
+            center_sampling_radius=1.5,
+            eps=1e-7  # Added small epsilon to prevent division by zero
         )
         if torch.cuda.is_available():
             loss_fn = loss_fn.cuda()
@@ -464,14 +496,9 @@ def main():
             'max_epochs': config.num_epochs,
             'early_stopping_patience': config.early_stopping_patience,
             'mixed_precision': True,
-            'loss': PPYoloELoss(
-                use_static_assigner=False,
-                num_classes=81,
-                reg_max=16,
-                iou_loss_weight=3.0
-            ),
+            'loss': loss_fn,
             'criterion_params': {
-                'label_smoothing': config.label_smoothing
+                'label_smoothing': 0.05  # Reduced from 0.1 for stability
             },
             'train_metrics_list': [
                 DetectionMetrics_050(
@@ -519,7 +546,10 @@ def main():
                 'betas': (0.937, 0.999),
                 'eps': 1e-8,
                 'lr': config.initial_lr,
-                'amsgrad': True
+                'amsgrad': True,
+                'foreach': True,  # Enable more efficient optimizer implementation
+                'maximize': False,
+                'capturable': True
             },
             'zero_weight_decay_on_bias_and_bn': True,  # Important for AdamW
             'lr_mode': 'cosine',
@@ -536,7 +566,8 @@ def main():
             'ema': True,
             'ema_params': {
                 'decay': config.ema_decay,
-                'decay_type': 'threshold'
+                'decay_type': 'threshold',
+                'warmup_epochs': config.warmup_epochs,
             },
             'batch_accumulate': config.batch_accumulate,
             'sync_bn': False,  # Disable if using single GPU
@@ -546,7 +577,13 @@ def main():
                 GPUMonitorCallback(),
                 GradientClippingCallback(clip_value=config.gradient_clip_val),
                 LRMonitorCallback()
-            ]
+            ],
+            # Add gradient scaling for mixed precision
+            'mixed_precision_params': {
+                'enabled': True,
+                'initial_scale': 2**10,
+                'growth_interval': 2000,
+            },
         }
 
         # Check for existing checkpoint
