@@ -184,9 +184,6 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
 
 def main():
     try:
-        # Initialize SuperGradients environment first
-        init_trainer()
-        
         # Set multiprocessing start method first
         if torch.cuda.is_available():
             mp.set_start_method('spawn', force=True)
