@@ -8,6 +8,7 @@ import argparse
 import textwrap
 import random
 import cv2
+import torch.multiprocessing as mp
 
 from super_gradients.training import Trainer, models
 from super_gradients.common.object_names import Models
@@ -117,46 +118,63 @@ def parse_args():
 def create_dataloader_with_memory_management(dataset_params, dataloader_params, is_training=True):
     """Create dataloader with memory management"""
     if torch.cuda.is_available():
+        # Ensure spawn method for workers
+        dataloader_params['multiprocessing_context'] = 'spawn'
+        
         # Calculate safe batch size based on available memory
         total_memory = torch.cuda.get_device_properties(0).total_memory
         available_memory = total_memory - torch.cuda.memory_allocated()
         
-        # Estimate memory per sample (adjust these values based on your model)
-        estimated_memory_per_sample = 500 * 1024 * 1024  # 500MB per sample
+        # More conservative memory per sample estimate
+        estimated_memory_per_sample = 750 * 1024 * 1024  # 750MB per sample
         max_safe_batch_size = max(1, int(available_memory / estimated_memory_per_sample))
         
         # Update batch size if needed
+        original_batch_size = dataloader_params['batch_size']
         dataloader_params['batch_size'] = min(
-            dataloader_params['batch_size'],
+            original_batch_size,
             max_safe_batch_size
         )
+        if dataloader_params['batch_size'] < original_batch_size:
+            logger.warning(f"Reduced batch size from {original_batch_size} to {dataloader_params['batch_size']} due to memory constraints")
         
-        # Enable pinned memory for faster transfer
+        # Enable pinned memory and set persistent workers
         dataloader_params['pin_memory'] = True
+        dataloader_params['persistent_workers'] = True
         
-        # Adjust num_workers based on CPU cores and memory
+        # Reduce number of workers to prevent CUDA issues
         dataloader_params['num_workers'] = min(
             dataloader_params['num_workers'],
-            os.cpu_count() or 1
+            4  # Limit max workers
         )
     
     # Extract max_targets from dataloader_params if present
     max_targets = dataloader_params.pop('max_targets', None)
     
-    # Create the dataloader
-    dataloader = (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
-        dataset_params=dataset_params,
-        dataloader_params=dataloader_params
-    )
-    
-    # If max_targets was specified, set it on the dataset
-    if max_targets is not None and hasattr(dataloader.dataset, 'max_targets'):
-        dataloader.dataset.max_targets = max_targets
-    
-    return dataloader
+    try:
+        # Create the dataloader
+        dataloader = (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
+            dataset_params=dataset_params,
+            dataloader_params=dataloader_params
+        )
+        
+        # If max_targets was specified, set it on the dataset
+        if max_targets is not None and hasattr(dataloader.dataset, 'max_targets'):
+            dataloader.dataset.max_targets = max_targets
+        
+        return dataloader
+    except Exception as e:
+        logger.error(f"Error creating dataloader: {e}")
+        raise
 
 def main():
     try:
+        # Add this at the start of main(), before any CUDA operations
+        if torch.cuda.is_available():
+            # Set start method to spawn
+            mp.set_start_method('spawn', force=True)
+            logger.info("Set multiprocessing start method to 'spawn'")
+
         # Parse command line arguments
         args = parse_args()
         
@@ -364,7 +382,7 @@ def main():
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
             'early_stopping_patience': config.early_stopping_patience,
-            'mixed_precision': torch.cuda.is_available(),
+            'mixed_precision': True if torch.cuda.is_available() else False,
             'loss': loss_fn,
             'valid_metrics_list': [
                 DetectionMetrics_050(
@@ -392,7 +410,16 @@ def main():
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
-            'optimizer_params': {'weight_decay': config.weight_decay}
+            'optimizer_params': {
+                'weight_decay': config.weight_decay,
+                'eps': 1e-8,
+                'amsgrad': True
+            },
+            'gradient_clip_val': 0.5,
+            'zero_weight_decay_on_bias_and_bn': True,
+            'loss_logging_items_names': ['Loss', 'Precision', 'Recall'],
+            'accelerator': 'cuda' if torch.cuda.is_available() else 'cpu',
+            'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         }
 
         # Create base dataloader first

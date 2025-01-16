@@ -15,6 +15,7 @@ import cv2
 import random
 from scipy import ndimage
 import torch
+import torch.multiprocessing as mp
 
 logger = logging.getLogger(__name__)
 
@@ -769,45 +770,66 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                 logger.error("Empty dataset in dataloader")
                 return None
             
-            if torch.cuda.is_available():
-                with torch.cuda.stream(self.stream):
-                    # Try to get from cache first if enabled
-                    if self.enable_memory_cache and self.cache:
-                        idx = random.choice(list(self.cache.keys()))
-                        self.cache_hits += 1
-                        if self.cache_hits % 1000 == 0:  # Log cache performance periodically
-                            hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
-                            logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
-                        return self.cache[idx]
-                    
-                    # Get random sample from dataset
-                    idx = random.randint(0, len(dataset) - 1)
-                    sample = dataset[idx]
-                    self.cache_misses += 1
-                    
-                    # Cache the image if enabled and there's room
-                    if self.enable_memory_cache and len(self.cache) < self.max_cache_size:
-                        try:
-                            # Ensure the image is in the right format before caching
-                            img = self.validate_image(sample.image)
-                            if img is not None:
-                                self.cache[idx] = img
-                        except Exception as e:
-                            logger.warning(f"Failed to cache image {idx}: {e}")
-                    elif self.enable_memory_cache and len(self.cache) >= self.max_cache_size and random.random() < 0.1:
-                        # Occasionally remove a random item if cache is full
-                        remove_key = random.choice(list(self.cache.keys()))
-                        del self.cache[remove_key]
-                    
-                    return sample.image
-            else:
-                # Non-CUDA path
-                return super()._get_random_image()
+            # Add mutex lock for thread safety
+            if not hasattr(self, '_lock'):
+                self._lock = mp.Lock()
             
+            with self._lock:
+                if torch.cuda.is_available():
+                    # Ensure we're in the main process
+                    if mp.current_process().name != 'MainProcess':
+                        logger.warning("Accessing CUDA from worker process, using CPU instead")
+                        torch.cuda.empty_cache()
+                        return self._get_random_image_cpu()
+                    
+                    with torch.cuda.stream(self.stream):
+                        # Try to get from cache first if enabled
+                        if self.enable_memory_cache and self.cache:
+                            idx = random.choice(list(self.cache.keys()))
+                            self.cache_hits += 1
+                            if self.cache_hits % 1000 == 0:  # Log cache performance periodically
+                                hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
+                                logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
+                            return self.cache[idx]
+                        
+                        # Get random sample from dataset
+                        idx = random.randint(0, len(dataset) - 1)
+                        sample = dataset[idx]
+                        self.cache_misses += 1
+                        
+                        # Cache the image if enabled and there's room
+                        if self.enable_memory_cache and len(self.cache) < self.max_cache_size:
+                            try:
+                                # Ensure the image is in the right format before caching
+                                img = self.validate_image(sample.image)
+                                if img is not None:
+                                    self.cache[idx] = img
+                            except Exception as e:
+                                logger.warning(f"Failed to cache image {idx}: {e}")
+                        elif self.enable_memory_cache and len(self.cache) >= self.max_cache_size and random.random() < 0.1:
+                            # Occasionally remove a random item if cache is full
+                            remove_key = random.choice(list(self.cache.keys()))
+                            del self.cache[remove_key]
+                        
+                        return sample.image
+                else:
+                    return self._get_random_image_cpu()
+                    
         except Exception as e:
             logger.error(f"Error getting random image: {e}")
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()  # Clear CUDA cache if there's an error
+                torch.cuda.empty_cache()
+            return None
+            
+    def _get_random_image_cpu(self):
+        """Fallback method for getting random images using CPU"""
+        try:
+            dataset = self.dataloader.dataset
+            idx = random.randint(0, len(dataset) - 1)
+            sample = dataset[idx]
+            return self.validate_image(sample.image)
+        except Exception as e:
+            logger.error(f"Error getting random image on CPU: {e}")
             return None
     
     def clear_cache(self):
