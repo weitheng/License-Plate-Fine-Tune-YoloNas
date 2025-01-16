@@ -140,10 +140,20 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
             os.cpu_count() or 1
         )
     
-    return (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
+    # Extract max_targets from dataloader_params if present
+    max_targets = dataloader_params.pop('max_targets', None)
+    
+    # Create the dataloader
+    dataloader = (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
         dataset_params=dataset_params,
         dataloader_params=dataloader_params
     )
+    
+    # If max_targets was specified, set it on the dataset
+    if max_targets is not None and hasattr(dataloader.dataset, 'max_targets'):
+        dataloader.dataset.max_targets = max_targets
+    
+    return dataloader
 
 def main():
     try:
@@ -422,8 +432,7 @@ def main():
                 'labels_dir': 'labels/val',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
-                'transforms': get_transforms(dataset_config, config.input_size, is_training=False),
-                'max_targets': 100  # Limit maximum targets per image
+                'transforms': get_transforms(dataset_config, config.input_size, is_training=False)
             },
             dataloader_params={
                 'batch_size': max(1, hw_params['batch_size'] // 2),  # Reduce validation batch size
@@ -431,7 +440,8 @@ def main():
                 'shuffle': False,
                 'pin_memory': torch.cuda.is_available(),
                 'drop_last': False,
-                'persistent_workers': False  # Disable persistent workers for validation
+                'persistent_workers': False,  # Disable persistent workers for validation
+                'max_targets': 100  # Move max_targets here in the dataloader params
             }
         )
 
