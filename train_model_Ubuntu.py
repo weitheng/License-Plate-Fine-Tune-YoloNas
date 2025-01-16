@@ -434,11 +434,11 @@ def main():
             'silent_mode': False,
             'average_best_models': True,
             'warmup_mode': 'LinearEpochLRWarmup',
-            'warmup_initial_lr': config.initial_lr / 100,
-            'lr_warmup_epochs': config.warmup_epochs,
+            'warmup_initial_lr': config.initial_lr / 1000,  # Start with much lower learning rate
+            'lr_warmup_epochs': 5,  # Increase warmup epochs
             'initial_lr': {
-                'backbone': config.initial_lr * 0.1,  # Lower learning rate for backbone
-                'default': config.initial_lr  # Default learning rate for other layers
+                'backbone': config.initial_lr * 0.05,  # Lower learning rate for backbone even more
+                'default': config.initial_lr * 0.1  # Lower initial learning rate
             },
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
@@ -474,6 +474,7 @@ def main():
                 )
             ],
             'metric_to_watch': 'mAP@0.50',
+            'greater_metric_to_watch_is_better': True,
             'sg_logger': 'wandb_sg_logger',
             'sg_logger_params': {
                 'save_checkpoints_remote': True,
@@ -484,24 +485,32 @@ def main():
             },
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
-            'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
             'optimizer': 'SGD',
             'optimizer_params': {
-                'weight_decay': config.weight_decay,
+                'weight_decay': config.weight_decay * 0.1,  # Reduce weight decay
                 'momentum': 0.937,
                 'nesterov': True
             },
-            'gradient_clip_val': 1.0,
+            'gradient_clip_val': 0.5,  # Add stricter gradient clipping
+            'clip_grad_norm': 1.0,  # Add gradient norm clipping
             'zero_weight_decay_on_bias_and_bn': True,
             'loss_logging_items_names': ['Loss', 'Precision', 'Recall'],
             'accelerator': 'cuda' if torch.cuda.is_available() else 'cpu',
             'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-            'lr_cooldown_epochs': 10,
-            'multiply_head_lr': 1.0,
+            'lr_cooldown_epochs': 15,  # Increase cooldown epochs
+            'multiply_head_lr': 0.1,  # Reduce head learning rate
             'criterion_params': {
                 'alpha': 0.25,
                 'gamma': 1.5
             },
+            'ema': True,  # Enable EMA
+            'ema_params': {
+                'decay': 0.9999,
+                'decay_type': 'threshold'
+            },
+            'batch_accumulate': 4,  # Add gradient accumulation
+            'sync_bn': True if torch.cuda.device_count() > 1 else False,  # Sync BatchNorm if multiple GPUs
+            'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],  # Save checkpoints at these epochs
         }
 
         # Check for existing checkpoint
