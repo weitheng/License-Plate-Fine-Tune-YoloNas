@@ -725,7 +725,6 @@ class SafeDetectionMosaic(SafeDetectionTransform):
         else:
             max_cache_by_gpu = 100
             
-        # Use the smaller of GPU-based or dataset-based cache size
         self.max_cache_size = min(
             max_cache_by_gpu,
             len(dataloader.dataset) if dataloader else 0
@@ -734,30 +733,14 @@ class SafeDetectionMosaic(SafeDetectionTransform):
         self.cache_hits = 0
         self.cache_misses = 0
         
-        # Enable CUDA optimizations for large datasets
-        if torch.cuda.is_available():
-            torch.backends.cudnn.benchmark = True
-            torch.backends.cuda.max_split_size_mb = 512
+        # Remove CUDA stream initialization from __init__
+        self.pinned_memory = torch.cuda.is_available()
         
-        self._setup_memory_optimizations()
-    
-    def _setup_memory_optimizations(self):
-        """Setup memory optimizations for large datasets"""
-        if torch.cuda.is_available():
-            # Pre-allocate pinned memory for faster transfers
-            self.pinned_memory = torch.cuda.is_available()
-            
-            # Use streams for asynchronous data transfers
+    def _setup_cuda_stream(self):
+        """Create CUDA stream on demand in worker process"""
+        if not hasattr(self, 'stream') and torch.cuda.is_available():
             self.stream = torch.cuda.Stream()
-            
-            # Enable automatic memory caching
             torch.cuda.empty_cache()
-            
-            # Log optimization settings
-            logger.info("Mosaic augmentation optimizations enabled:")
-            logger.info(f"✓ Max cache size: {self.max_cache_size}")
-            logger.info("✓ Pinned memory enabled")
-            logger.info("✓ CUDA stream processing")
     
     def _get_random_image(self):
         try:
@@ -770,49 +753,45 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                 logger.error("Empty dataset in dataloader")
                 return None
             
-            # Add mutex lock for thread safety
+            # Create lock if needed
             if not hasattr(self, '_lock'):
                 self._lock = mp.Lock()
             
             with self._lock:
-                if torch.cuda.is_available():
-                    # Ensure we're in the main process
-                    if mp.current_process().name != 'MainProcess':
-                        logger.warning("Accessing CUDA from worker process, using CPU instead")
-                        torch.cuda.empty_cache()
-                        return self._get_random_image_cpu()
+                # Check if we're in a worker process
+                is_worker = mp.current_process().name != 'MainProcess'
+                
+                if torch.cuda.is_available() and not is_worker:
+                    # Setup CUDA stream when needed (only in main process)
+                    self._setup_cuda_stream()
                     
-                    with torch.cuda.stream(self.stream):
-                        # Try to get from cache first if enabled
-                        if self.enable_memory_cache and self.cache:
-                            idx = random.choice(list(self.cache.keys()))
-                            self.cache_hits += 1
-                            if self.cache_hits % 1000 == 0:  # Log cache performance periodically
-                                hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
-                                logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
-                            return self.cache[idx]
-                        
-                        # Get random sample from dataset
-                        idx = random.randint(0, len(dataset) - 1)
-                        sample = dataset[idx]
-                        self.cache_misses += 1
-                        
-                        # Cache the image if enabled and there's room
-                        if self.enable_memory_cache and len(self.cache) < self.max_cache_size:
-                            try:
-                                # Ensure the image is in the right format before caching
-                                img = self.validate_image(sample.image)
-                                if img is not None:
-                                    self.cache[idx] = img
-                            except Exception as e:
-                                logger.warning(f"Failed to cache image {idx}: {e}")
-                        elif self.enable_memory_cache and len(self.cache) >= self.max_cache_size and random.random() < 0.1:
-                            # Occasionally remove a random item if cache is full
+                    # Try to get from cache first if enabled
+                    if self.enable_memory_cache and self.cache:
+                        idx = random.choice(list(self.cache.keys()))
+                        self.cache_hits += 1
+                        if self.cache_hits % 1000 == 0:
+                            hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
+                            logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
+                        return self.cache[idx]
+                    
+                    # Get random sample from dataset
+                    idx = random.randint(0, len(dataset) - 1)
+                    sample = dataset[idx]
+                    self.cache_misses += 1
+                    
+                    # Process image and cache if possible
+                    img = self.validate_image(sample.image)
+                    if img is not None and self.enable_memory_cache:
+                        if len(self.cache) < self.max_cache_size:
+                            self.cache[idx] = img
+                        elif random.random() < 0.1:  # Occasionally replace items
                             remove_key = random.choice(list(self.cache.keys()))
                             del self.cache[remove_key]
-                        
-                        return sample.image
+                            self.cache[idx] = img
+                    
+                    return img
                 else:
+                    # Use CPU path for worker processes
                     return self._get_random_image_cpu()
                     
         except Exception as e:

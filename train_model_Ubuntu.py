@@ -138,15 +138,18 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         if dataloader_params['batch_size'] < original_batch_size:
             logger.warning(f"Reduced batch size from {original_batch_size} to {dataloader_params['batch_size']} due to memory constraints")
         
-        # Enable pinned memory and set persistent workers
+        # Enable pinned memory but disable persistent workers
         dataloader_params['pin_memory'] = True
-        dataloader_params['persistent_workers'] = True
+        dataloader_params['persistent_workers'] = False  # Disable persistent workers
         
-        # Reduce number of workers to prevent CUDA issues
+        # Reduce number of workers
         dataloader_params['num_workers'] = min(
             dataloader_params['num_workers'],
-            4  # Limit max workers
+            2  # Further limit workers to prevent CUDA issues
         )
+        
+        # Add timeout for worker initialization
+        dataloader_params['timeout'] = 60  # 60 second timeout
     
     # Extract max_targets from dataloader_params if present
     max_targets = dataloader_params.pop('max_targets', None)
