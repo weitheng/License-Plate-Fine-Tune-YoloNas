@@ -14,6 +14,7 @@ import os
 import cv2
 import random
 from scipy import ndimage
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -261,24 +262,31 @@ class DetectionWeatherEffects(DetectionTransform):
             if image.dtype != np.uint8:
                 image = (image * 255).astype(np.uint8)
             
-            # Ensure HWC format
-            if len(image.shape) == 3 and image.shape[0] == 3:
-                image = np.transpose(image, (1, 2, 0))
-            
             h, w = image.shape[:2]
-            rain_drops = np.random.random((h, w)) < self.rain_intensity
-            streak_length = random.randint(10, 20)
-            angle = random.uniform(-20, -10)  # Typical rain angle
+            # Use smaller data type for rain drops to reduce memory
+            rain_drops = (np.random.random((h, w)) < self.rain_intensity).astype(np.uint8)
+            streak_length = min(15, random.randint(10, 20))  # Limit max streak length
+            angle = random.uniform(-20, -10)
             
-            rain_layer = np.zeros((h, w), dtype=bool)
-            for i in range(streak_length):
-                shifted = np.roll(rain_drops, i)
-                rain_layer |= ndimage.rotate(shifted, angle, reshape=False) > 0.5
+            # Use uint8 instead of bool for rain_layer
+            rain_layer = np.zeros((h, w), dtype=np.uint8)
             
+            # Process in smaller chunks to reduce memory usage
+            chunk_size = h // 4
+            for chunk_start in range(0, h, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, h)
+                chunk = rain_drops[chunk_start:chunk_end, :]
+                for i in range(streak_length):
+                    shifted = np.roll(chunk, i)
+                    rain_layer[chunk_start:chunk_end] |= (
+                        ndimage.rotate(shifted, angle, reshape=False) > 0.5
+                    ).astype(np.uint8)
+            
+            # Apply rain effect more efficiently
             brightness = np.random.uniform(0.8, 1.2)
             rain_effect = image.copy()
-            rain_effect[rain_layer] = np.minimum(
-                rain_effect[rain_layer] * brightness, 
+            rain_effect[rain_layer > 0] = np.minimum(
+                rain_effect[rain_layer > 0] * brightness, 
                 255
             ).astype(np.uint8)
             
@@ -412,6 +420,11 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
 def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransform]:
     """Create validation transforms."""
     logger.info("Setting up validation transforms:")
+    
+    # Clear CUDA cache before validation
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
     transforms = [
         ImageShapeCorrection(),
         SafeDetectionPaddedRescale(input_dim=input_size, pad_value=114),
