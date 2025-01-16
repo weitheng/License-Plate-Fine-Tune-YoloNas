@@ -430,34 +430,47 @@ class GradientMonitorCallback(PhaseCallback):
         try:
             self.batch_counter += 1
             if self.batch_counter % self.logging_frequency == 0:
-                # Access model through trainer's net attribute
                 if hasattr(context.trainer, 'net'):
                     model = context.trainer.net
                     total_norm = 0.0
                     param_count = 0
+                    has_nan = False
                     
                     for p in model.parameters():
                         if p.grad is not None:
+                            if torch.isnan(p.grad).any():
+                                has_nan = True
+                                self.logger.warning(f"NaN detected in gradients!")
+                                break
                             param_norm = p.grad.data.norm(2)
                             total_norm += param_norm.item() ** 2
                             param_count += 1
+                    
+                    if has_nan:
+                        # Skip this batch or take corrective action
+                        context.skip_batch = True
+                        return
                     
                     if param_count > 0:
                         total_norm = total_norm ** 0.5
                         avg_norm = total_norm / param_count
                         
+                        # Log gradient norms
                         self.logger.info(
                             f"Batch {self.batch_counter}: "
                             f"Average gradient norm: {avg_norm:.5f}, "
                             f"Total norm: {total_norm:.5f}"
                         )
                         
-                        # Log to wandb if available
                         if wandb.run is not None:
                             wandb.log({
                                 'gradient/average_norm': avg_norm,
                                 'gradient/total_norm': total_norm
                             })
+                        
+                        # Check for gradient explosion
+                        if total_norm > 1000:
+                            self.logger.warning(f"Large gradient norm detected: {total_norm:.2f}")
                 else:
                     self.logger.warning("Model not accessible in callback context")
                     
