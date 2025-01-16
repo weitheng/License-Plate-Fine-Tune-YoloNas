@@ -63,9 +63,9 @@ class GradientClippingCallback(PhaseCallback):
         self.clip_value = clip_value
 
     def __call__(self, context: PhaseContext):
-        if hasattr(context.trainer, 'net'):
+        if hasattr(context, 'model'):
             torch.nn.utils.clip_grad_norm_(
-                context.trainer.net.parameters(),
+                context.model.parameters(),
                 self.clip_value
             )
 
@@ -76,10 +76,10 @@ class LRMonitorCallback(PhaseCallback):
         self.last_log = 0
 
     def __call__(self, context: PhaseContext):
-        if hasattr(context.trainer, 'optimizer'):
+        if hasattr(context, 'optimizer'):
             current_time = time.time()
             if current_time - self.last_log >= 30:  # Log every 30 seconds
-                for param_group in context.trainer.optimizer.param_groups:
+                for param_group in context.optimizer.param_groups:
                     current_lr = param_group.get('lr', 0)
                     self.logger.info(f"Current learning rate: {current_lr:.2e}")
                     if wandb.run is not None:
@@ -89,27 +89,30 @@ class LRMonitorCallback(PhaseCallback):
 class LRSchedulerCallback(PhaseCallback):
     def __init__(self):
         super().__init__(phase=Phase.TRAIN_EPOCH_END)
+        self.logger = logging.getLogger(__name__)
         
     def __call__(self, context: PhaseContext):
-        if context.epoch < context.training_params['lr_warmup_epochs']:
+        if not hasattr(context, 'epoch') or context.epoch < context.training_params['lr_warmup_epochs']:
             return
             
         # Get current learning rate
-        current_lr = context.optimizer.param_groups[0]['lr']
-        
-        # Check for NaN values in gradients
-        has_nan = False
-        for param in context.net.parameters():
-            if param.grad is not None and torch.isnan(param.grad).any():
-                has_nan = True
-                break
-        
-        # If NaN detected, reduce learning rate
-        if has_nan:
-            new_lr = current_lr * 0.1
-            logger.warning(f"NaN detected - reducing learning rate to {new_lr}")
-            for param_group in context.optimizer.param_groups:
-                param_group['lr'] = new_lr
+        if hasattr(context, 'optimizer') and context.optimizer.param_groups:
+            current_lr = context.optimizer.param_groups[0]['lr']
+            
+            # Check for NaN values in gradients
+            has_nan = False
+            if hasattr(context, 'model'):
+                for param in context.model.parameters():
+                    if param.grad is not None and torch.isnan(param.grad).any():
+                        has_nan = True
+                        break
+            
+            # If NaN detected, reduce learning rate
+            if has_nan:
+                new_lr = current_lr * 0.1
+                self.logger.warning(f"NaN detected - reducing learning rate to {new_lr}")
+                for param_group in context.optimizer.param_groups:
+                    param_group['lr'] = new_lr
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
