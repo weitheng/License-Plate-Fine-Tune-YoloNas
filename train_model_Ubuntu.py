@@ -17,7 +17,6 @@ import cv2
 import torch.multiprocessing as mp
 import numpy as np
 import super_gradients
-from super_gradients.common.environment.env_helpers import init_trainer
 
 from super_gradients.training import Trainer, models
 from super_gradients.common.object_names import Models
