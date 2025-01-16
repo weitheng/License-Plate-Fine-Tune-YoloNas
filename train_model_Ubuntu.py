@@ -9,6 +9,7 @@ import textwrap
 import random
 import cv2
 import torch.multiprocessing as mp
+import numpy as np
 
 from super_gradients.training import Trainer, models
 from super_gradients.common.object_names import Models
@@ -140,16 +141,20 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         
         # Enable pinned memory but disable persistent workers
         dataloader_params['pin_memory'] = True
-        dataloader_params['persistent_workers'] = False  # Disable persistent workers
+        dataloader_params['persistent_workers'] = False
         
-        # Reduce number of workers
+        # Reduce number of workers and increase timeout
         dataloader_params['num_workers'] = min(
             dataloader_params['num_workers'],
-            2  # Further limit workers to prevent CUDA issues
+            os.cpu_count() // 2 or 1  # Use half of available CPU cores
         )
         
-        # Add timeout for worker initialization
-        dataloader_params['timeout'] = 60  # 60 second timeout
+        # Increase timeout and add prefetch factor
+        dataloader_params['timeout'] = 120  # Increase timeout to 120 seconds
+        dataloader_params['prefetch_factor'] = 2  # Reduce prefetch factor
+        
+        # Add worker init function to set CPU affinity
+        dataloader_params['worker_init_fn'] = worker_init_fn
     
     # Extract max_targets from dataloader_params if present
     max_targets = dataloader_params.pop('max_targets', None)
@@ -170,11 +175,33 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         logger.error(f"Error creating dataloader: {e}")
         raise
 
+def worker_init_fn(worker_id):
+    """Initialize worker process"""
+    # Set different seed for each worker
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+    
+    # Try to set CPU affinity if possible
+    try:
+        import os
+        import psutil
+        
+        process = psutil.Process()
+        # Get the number of CPU cores
+        cpu_count = os.cpu_count() or 1
+        # Assign worker to specific CPU core
+        worker_core = worker_id % cpu_count
+        process.cpu_affinity([worker_core])
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"Could not set CPU affinity: {e}")
+
 def main():
     try:
-        # Add this at the start of main(), before any CUDA operations
+        # Remove the log_environment_info() call from here since it's called by SuperGradients
         if torch.cuda.is_available():
-            # Set start method to spawn
             mp.set_start_method('spawn', force=True)
             logger.info("Set multiprocessing start method to 'spawn'")
 
@@ -299,11 +326,15 @@ def main():
                     f"expected {EXPECTED_TOTAL_VAL}"
                 )
 
-        # Initialize wandb and start training
+        # Initialize wandb first with specific settings
         try:
             logger.info("Initializing Weights & Biases...")
-            wandb.login()
-            wandb.init(project="license-plate-detection", name="yolo-nas-s-coco-finetuning")
+            wandb.init(
+                project="license-plate-detection",
+                name="yolo-nas-s-coco-finetuning",
+                config=train_params,
+                resume=True if os.path.exists(checkpoint_path) else False
+            )
             logger.info("✓ Weights & Biases initialized")
         except Exception as e:
             logger.error(f"Failed to initialize wandb: {e}")
@@ -381,7 +412,10 @@ def main():
             'warmup_mode': 'LinearEpochLRWarmup',
             'warmup_initial_lr': config.initial_lr / 100,
             'lr_warmup_epochs': config.warmup_epochs,
-            'initial_lr': config.initial_lr,
+            'initial_lr': {
+                'backbone': config.initial_lr * 0.1,  # Lower learning rate for backbone
+                'default': config.initial_lr  # Default learning rate for other layers
+            },
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
             'early_stopping_patience': config.early_stopping_patience,
@@ -506,7 +540,8 @@ def main():
         # Initialize trainer with explicit absolute paths
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Ensure absolute path
+            ckpt_root_dir=os.path.abspath(checkpoint_dir),
+            training_params=train_params
         )
 
         # Validate dataset contents before training
