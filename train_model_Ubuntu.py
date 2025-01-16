@@ -375,8 +375,8 @@ def main():
             'resume': False,
             'silent_mode': False,
             'average_best_models': True,
-            'warmup_mode': 'LinearEpochLRWarmup',
-            'warmup_initial_lr': 1e-6,
+            'warmup_mode': 'linear_epoch_step',
+            'warmup_initial_lr': config.initial_lr / 100,
             'lr_warmup_epochs': config.warmup_epochs,
             'initial_lr': config.initial_lr,
             'lr_mode': 'cosine',
@@ -410,16 +410,23 @@ def main():
             'dropout': config.dropout,
             'label_smoothing': config.label_smoothing,
             'resume_path': os.path.join(os.path.abspath(checkpoint_dir), 'latest_checkpoint.pth'),
+            'optimizer': 'SGD',
             'optimizer_params': {
                 'weight_decay': config.weight_decay,
-                'eps': 1e-8,
-                'amsgrad': True
+                'momentum': 0.937,
+                'nesterov': True
             },
-            'gradient_clip_val': 0.5,
+            'gradient_clip_val': 1.0,
             'zero_weight_decay_on_bias_and_bn': True,
             'loss_logging_items_names': ['Loss', 'Precision', 'Recall'],
             'accelerator': 'cuda' if torch.cuda.is_available() else 'cpu',
             'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+            'lr_cooldown_epochs': 10,
+            'multiply_head_lr': 1.0,
+            'criterion_params': {
+                'alpha': 0.25,
+                'gamma': 1.5
+            },
         }
 
         # Create base dataloader first

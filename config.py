@@ -20,11 +20,11 @@ class TrainingConfig:
         label_smoothing (float): Label smoothing factor
         export_image_size (tuple): Image size for model export
     """
-    num_epochs: int = 85
+    num_epochs: int = 100
     batch_size: int = 32
     input_size: tuple = (640, 640)
-    initial_lr: float = 3e-4 #from 1e-4
-    warmup_epochs: int = 5
+    initial_lr: float = 1e-3
+    warmup_epochs: int = 3
     num_workers: int = 8
     
     # Model parameters
@@ -33,9 +33,9 @@ class TrainingConfig:
     max_predictions: int = 200
     
     # Training parameters
-    early_stopping_patience: int = 7 #from 5
-    weight_decay: float = 0.001
-    dropout: float = 0.2 #from 0.1
+    early_stopping_patience: int = 10
+    weight_decay: float = 5e-4
+    dropout: float = 0.1
     label_smoothing: float = 0.1
     
     # Export parameters
@@ -74,6 +74,8 @@ class TrainingConfig:
         config = cls()
         if gpu_memory_gb < 8:
             config.batch_size = 4
+            config.initial_lr = 5e-4
         elif gpu_memory_gb < 16:
             config.batch_size = 8
+            config.initial_lr = 7e-4
         return config.validate()
