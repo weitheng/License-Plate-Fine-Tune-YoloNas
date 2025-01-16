@@ -21,7 +21,7 @@ from super_gradients.training.models.detection_models.pp_yolo_e import PPYoloEPo
 from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 from yolo_training_utils import (
     assess_hardware_capabilities, load_dataset_config, setup_directories,
-    validate_cuda_setup, monitor_gpu, 
+    validate_cuda_setup, monitor_gpu, setup_cuda_error_handling,
     validate_path_is_absolute, validate_training_config,
     log_environment_info, cleanup_downloads, monitor_memory,
     verify_checkpoint
@@ -125,6 +125,11 @@ def main():
         logger.info(f"Using device: {device}")
         if device == "cpu":
             logger.warning("No GPU detected - training will be slow!")
+            
+        # Add CUDA error handling setup right after device check
+        if device == "cuda":
+            setup_cuda_error_handling()
+            logger.info("CUDA error handling configured")
 
         # Get absolute paths at the start
         current_dir = os.path.abspath(os.path.dirname(__file__))

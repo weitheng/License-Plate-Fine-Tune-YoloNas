@@ -264,3 +264,19 @@ def verify_checkpoint(checkpoint_path: str, is_model_weights: bool = False) -> b
     except Exception as e:
         logger.error(f"Error verifying checkpoint {checkpoint_path}: {e}")
         return False
+
+def setup_cuda_error_handling():
+    """Setup CUDA error handling and debugging"""
+    if torch.cuda.is_available():
+        # Enable CUDA error checking
+        os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+        
+        # Enable device-side assertions if available
+        if hasattr(torch, 'set_device_debug'):
+            torch.set_device_debug(True)
+        
+        # Set more conservative memory settings
+        torch.cuda.set_per_process_memory_fraction(0.8)  # Use only 80% of available memory
+        
+        # Enable anomaly detection in PyTorch
+        torch.autograd.set_detect_anomaly(True)
