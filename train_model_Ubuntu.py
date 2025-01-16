@@ -86,6 +86,31 @@ class LRMonitorCallback(PhaseCallback):
                         wandb.log({'learning_rate': current_lr})
                 self.last_log = current_time
 
+class LRSchedulerCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_EPOCH_END)
+        
+    def __call__(self, context: PhaseContext):
+        if context.epoch < context.training_params['lr_warmup_epochs']:
+            return
+            
+        # Get current learning rate
+        current_lr = context.optimizer.param_groups[0]['lr']
+        
+        # Check for NaN values in gradients
+        has_nan = False
+        for param in context.net.parameters():
+            if param.grad is not None and torch.isnan(param.grad).any():
+                has_nan = True
+                break
+        
+        # If NaN detected, reduce learning rate
+        if has_nan:
+            new_lr = current_lr * 0.1
+            logger.warning(f"NaN detected - reducing learning rate to {new_lr}")
+            for param_group in context.optimizer.param_groups:
+                param_group['lr'] = new_lr
+
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
     # Format for both file and terminal
@@ -425,20 +450,21 @@ def main():
                 model.use_gradient_checkpointing()
             
             if torch.cuda.is_available():
-                model = model.cuda()
-                # Use channels_last memory format for better performance
-                model = model.to(memory_format=torch.channels_last)
-                model = torch.compile(model, mode='reduce-overhead')
+                # Remove channels_last and compile for now
                 model.train()
                 
-                # Enable cuDNN benchmarking and deterministic mode
-                torch.backends.cudnn.benchmark = True
-                torch.backends.cudnn.deterministic = False
+                # Use more conservative CUDA settings
+                torch.backends.cudnn.benchmark = False  # Disable for stability
+                torch.backends.cudnn.deterministic = True  # Enable for reproducibility
                 torch.backends.cudnn.enabled = True
                 
-                # Set more conservative memory settings
+                # More conservative memory settings
                 torch.cuda.empty_cache()
-                torch.cuda.set_per_process_memory_fraction(0.85)
+                torch.cuda.set_per_process_memory_fraction(0.75)  # Reduced from 0.85
+                
+                # Initialize weights with double precision temporarily
+                model = model.double()
+                model = model.float()  # Convert back to float
             
             logger.info(f"Model device: {next(model.parameters()).device}")
             logger.success("✓ Model initialized successfully")
@@ -452,12 +478,12 @@ def main():
             logger.info(f"Initial GPU memory allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB")
             logger.info(f"Initial GPU memory cached: {torch.cuda.memory_reserved()/1e9:.2f} GB")
 
-        # Define loss function with more stable parameters
+        # Define loss function with more conservative parameters
         loss_fn = PPYoloELoss(
-            use_static_assigner=True,  # Changed to True for more stability
+            use_static_assigner=True,
             num_classes=81,
             reg_max=16,
-            iou_loss_weight=2.0  # Reduced from 3.0
+            iou_loss_weight=1.0  # Further reduced from 2.0
         )
         if torch.cuda.is_available():
             loss_fn = loss_fn.cuda()
@@ -488,7 +514,7 @@ def main():
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
             'early_stopping_patience': config.early_stopping_patience,
-            'mixed_precision': True,
+            'mixed_precision': False,  # Disable mixed precision temporarily
             'loss': loss_fn,
             'criterion_params': {
                 'label_smoothing': 0.05,  # Reduced from 0.1 for stability
@@ -542,18 +568,18 @@ def main():
             'optimizer': 'AdamW',
             'optimizer_params': {
                 'weight_decay': config.weight_decay,
-                'betas': (0.937, 0.999),
+                'betas': (0.9, 0.999),  # Back to default betas
                 'eps': 1e-8,
                 'lr': config.initial_lr,
                 'amsgrad': True,
-                'foreach': True,  # Enable more efficient optimizer implementation
+                'foreach': False,  # Disable foreach
                 'maximize': False,
-                'capturable': True
+                'capturable': False
             },
-            'zero_weight_decay_on_bias_and_bn': True,  # Important for AdamW
+            'zero_weight_decay_on_bias_and_bn': True,
             'lr_mode': 'cosine',
             'lr_warmup_epochs': config.warmup_epochs,
-            'warmup_initial_lr': config.initial_lr * 0.1,
+            'warmup_initial_lr': config.initial_lr * 0.01,  # Start with even lower LR
             'initial_lr': {
                 'backbone': config.initial_lr * 0.1,
                 'default': config.initial_lr
@@ -568,21 +594,16 @@ def main():
                 'decay_type': 'threshold',
                 'warmup_epochs': config.warmup_epochs,
             },
-            'batch_accumulate': config.batch_accumulate,
+            'batch_accumulate': 1,  # Start with no accumulation
             'sync_bn': False,  # Disable if using single GPU
             'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],
             'phase_callbacks': [
                 GradientMonitorCallback(logging_frequency=50, max_grad_norm=config.max_grad_norm),
                 GPUMonitorCallback(),
                 GradientClippingCallback(clip_value=config.gradient_clip_val),
-                LRMonitorCallback()
+                LRMonitorCallback(),
+                LRSchedulerCallback()
             ],
-            # Add gradient scaling for mixed precision
-            'mixed_precision_params': {
-                'enabled': True,
-                'initial_scale': 2**10,
-                'growth_interval': 2000,
-            },
         }
 
         # Check for existing checkpoint

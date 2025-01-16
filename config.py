@@ -24,8 +24,8 @@ class TrainingConfig:
     num_epochs: int = 100
     batch_size: int = 32
     input_size: tuple = (640, 640)
-    initial_lr: float = 8e-5
-    warmup_epochs: int = 15
+    initial_lr: float = 1e-5
+    warmup_epochs: int = 20
     num_workers: int = 8
     
     # Model parameters
@@ -35,7 +35,7 @@ class TrainingConfig:
     
     # Training parameters
     early_stopping_patience: int = 10
-    weight_decay: float = 1e-3
+    weight_decay: float = 1e-4
     dropout: float = 0.1
     label_smoothing: float = 0.1
     
@@ -50,17 +50,17 @@ class TrainingConfig:
     lr_cooldown_epochs: int = 15
     
     # Advanced training parameters
-    gradient_clip_val: float = 0.5
+    gradient_clip_val: float = 0.1
     clip_grad_norm: float = 0.5
-    batch_accumulate: int = 16
+    batch_accumulate: int = 1
     ema_decay: float = 0.9999
     
     # Export parameters
     export_image_size: tuple = (320, 320)
     
     # Add new stability parameters
-    min_lr: float = 5e-7
-    max_grad_norm: float = 5.0
+    min_lr: float = 1e-7
+    max_grad_norm: float = 1.0
     warmup_momentum: float = 0.95
     
     def validate(self):
