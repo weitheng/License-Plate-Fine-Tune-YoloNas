@@ -468,9 +468,11 @@ def main():
                 use_static_assigner=False,
                 num_classes=81,
                 reg_max=16,
-                iou_loss_weight=3.0,
-                label_smoothing=config.label_smoothing
+                iou_loss_weight=3.0
             ),
+            'criterion_params': {
+                'label_smoothing': config.label_smoothing
+            },
             'train_metrics_list': [
                 DetectionMetrics_050(
                     score_thres=config.confidence_threshold,
