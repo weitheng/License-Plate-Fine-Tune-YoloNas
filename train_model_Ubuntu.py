@@ -27,6 +27,7 @@ from super_gradients.training.losses import PPYoloELoss
 from super_gradients.training.metrics import DetectionMetrics_050
 from super_gradients.training.models.detection_models.pp_yolo_e import PPYoloEPostPredictionCallback
 from super_gradients.training.utils.callbacks import PhaseCallback, Phase
+from super_gradients.training.utils.callbacks.base_callbacks import PhaseContext
 from yolo_training_utils import (
     assess_hardware_capabilities, load_dataset_config, setup_directories,
     validate_cuda_setup, monitor_gpu, setup_cuda_error_handling,
