@@ -407,6 +407,20 @@ def main():
             'early_stopping_patience': config.early_stopping_patience,
             'mixed_precision': True if torch.cuda.is_available() else False,
             'loss': loss_fn,
+            'train_metrics_list': [
+                DetectionMetrics_050(
+                    score_thres=config.confidence_threshold,
+                    top_k_predictions=config.max_predictions,
+                    num_cls=81,
+                    normalize_targets=True,
+                    post_prediction_callback=PPYoloEPostPredictionCallback(
+                        score_threshold=config.confidence_threshold,
+                        nms_threshold=config.nms_threshold,
+                        nms_top_k=config.max_predictions,
+                        max_predictions=config.max_predictions
+                    )
+                )
+            ],
             'valid_metrics_list': [
                 DetectionMetrics_050(
                     score_thres=config.confidence_threshold,
