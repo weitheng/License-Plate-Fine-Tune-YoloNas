@@ -45,7 +45,7 @@ def assess_hardware_capabilities() -> Dict[str, int]:
             elif gpu_memory < 16:
                 recommended_batch_size = 16
             elif gpu_memory < 24:
-                recommended_batch_size = 24
+                recommended_batch_size = 18 #decreased from 24 to 18
             else:
                 recommended_batch_size = 32
                 
@@ -59,8 +59,8 @@ def assess_hardware_capabilities() -> Dict[str, int]:
         # Get available RAM
         available_ram = psutil.virtual_memory().available / 1024**3  # Convert to GB
         
-        # Adjust workers based on available RAM (each worker needs ~2GB)
-        max_workers_ram = max(1, int(available_ram / 2))
+        # Adjust workers based on available RAM (each worker needs ~4GB)
+        max_workers_ram = max(1, int(available_ram / 4))
         recommended_workers = min(recommended_workers, max_workers_ram)
 
         # Log final recommendations
