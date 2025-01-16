@@ -540,8 +540,7 @@ def main():
         # Initialize trainer with explicit absolute paths
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir),
-            training_params=train_params
+            ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Remove training_params from here
         )
 
         # Validate dataset contents before training
@@ -561,9 +560,10 @@ def main():
         if args.skip_lp_checks:
             logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
         
+        # Pass training_params to the train() method instead
         trainer.train(
             model=model,
-            training_params=train_params,
+            training_params=train_params,  # Pass training_params here
             train_loader=train_data,
             valid_loader=val_data
         )
