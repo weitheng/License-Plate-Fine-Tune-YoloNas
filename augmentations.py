@@ -186,13 +186,14 @@ class DetectionMotionBlur(DetectionTransform):
     
     def apply_motion_blur(self, image):
         try:
-            # Ensure image is in correct format
+            # Convert to HWC if in CHW format
+            needs_transpose = len(image.shape) == 3 and image.shape[0] == 3
+            if needs_transpose:
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Ensure uint8 format
             if image.dtype != np.uint8:
                 image = (image * 255).astype(np.uint8)
-            
-            # Ensure HWC format
-            if len(image.shape) == 3 and image.shape[0] == 3:
-                image = np.transpose(image, (1, 2, 0))
             
             # Add random angle variation for more realistic motion
             actual_angle = self.angle + random.uniform(-15, 15) if self.angle != 0 else 0
@@ -210,11 +211,17 @@ class DetectionMotionBlur(DetectionTransform):
                     (self.kernel_size, self.kernel_size)
                 )
             
-            blurred = cv2.filter2D(image, -1, kernel)
-            return blurred.astype(np.uint8)
+            result = cv2.filter2D(image, -1, kernel)
+            
+            # Convert back to original format if needed
+            if needs_transpose:
+                result = np.transpose(result, (2, 0, 1))
+                
+            return result.astype(np.uint8)
             
         except Exception as e:
             logger.error(f"Error in motion blur application: {str(e)}")
+            logger.error(f"Image shape: {image.shape if image is not None else 'None'}")
             return image
 
     def apply_to_sample(self, sample):
@@ -235,9 +242,30 @@ class DetectionNoise(DetectionTransform):
         self.prob = prob
 
     def add_noise(self, image):
-        noise = np.random.normal(self.mean, self.std, image.shape)
-        noisy_image = image.astype(np.float32) + noise * 255.0
-        return np.clip(noisy_image, 0, 255).astype(np.uint8)
+        try:
+            # Convert to HWC if in CHW format
+            needs_transpose = len(image.shape) == 3 and image.shape[0] == 3
+            if needs_transpose:
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Convert to float32 for noise addition
+            image_float = image.astype(np.float32)
+            
+            # Generate noise for each channel
+            noise = np.random.normal(self.mean, self.std, image.shape) * 255.0
+            noisy_image = np.clip(image_float + noise, 0, 255)
+            
+            # Convert back to original format if needed
+            result = noisy_image.astype(np.uint8)
+            if needs_transpose:
+                result = np.transpose(result, (2, 0, 1))
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in noise application: {str(e)}")
+            logger.error(f"Image shape: {image.shape if image is not None else 'None'}")
+            return image
 
     def apply_to_sample(self, sample):
         try:
@@ -258,20 +286,24 @@ class DetectionWeatherEffects(DetectionTransform):
 
     def add_rain(self, image):
         try:
-            # Ensure image is in correct format
+            # Ensure image is in correct format (HWC)
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                image = np.transpose(image, (1, 2, 0))  # Convert from CHW to HWC
+            
+            # Ensure uint8 format
             if image.dtype != np.uint8:
                 image = (image * 255).astype(np.uint8)
             
             h, w = image.shape[:2]
             
             # Ensure minimum dimensions for chunking
-            min_chunk_size = 32  # Minimum chunk size
-            num_chunks = max(1, min(4, h // min_chunk_size))  # At most 4 chunks, at least 1
+            min_chunk_size = 32
+            num_chunks = max(1, min(4, h // min_chunk_size))
             chunk_size = max(min_chunk_size, h // num_chunks)
             
             # Use smaller data type for rain drops to reduce memory
             rain_drops = (np.random.random((h, w)) < self.rain_intensity).astype(np.uint8)
-            streak_length = min(15, random.randint(10, 20))  # Limit max streak length
+            streak_length = min(15, random.randint(10, 20))
             angle = random.uniform(-20, -10)
             
             # Use uint8 instead of bool for rain_layer
@@ -281,7 +313,7 @@ class DetectionWeatherEffects(DetectionTransform):
             for chunk_start in range(0, h, chunk_size):
                 chunk_end = min(chunk_start + chunk_size, h)
                 if chunk_end <= chunk_start:
-                    continue  # Skip invalid chunks
+                    continue
                     
                 chunk = rain_drops[chunk_start:chunk_end, :]
                 for i in range(streak_length):
@@ -293,13 +325,21 @@ class DetectionWeatherEffects(DetectionTransform):
             brightness = np.random.uniform(0.8, 1.2)
             rain_effect = image.copy()
             rain_mask = rain_layer > 0
-            if rain_mask.any():  # Only apply effect if there are rain pixels
+            if rain_mask.any():
+                # Expand rain_mask to match image channels
+                rain_mask = np.stack([rain_mask] * 3, axis=-1)
                 rain_effect[rain_mask] = np.minimum(
                     rain_effect[rain_mask] * brightness, 
                     255
                 ).astype(np.uint8)
             
-            return cv2.GaussianBlur(rain_effect, (3, 3), 0)
+            result = cv2.GaussianBlur(rain_effect, (3, 3), 0)
+            
+            # Convert back to original format if needed (CHW)
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                result = np.transpose(result, (2, 0, 1))  # Convert back to CHW
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error in rain effect application: {str(e)}")
@@ -308,19 +348,26 @@ class DetectionWeatherEffects(DetectionTransform):
 
     def add_fog(self, image):
         try:
-            # Ensure image is in correct format
-            if image.dtype != np.uint8:
-                image = (image * 255).astype(np.uint8)
-            
-            # Ensure HWC format
+            # Convert to HWC if in CHW format
             if len(image.shape) == 3 and image.shape[0] == 3:
                 image = np.transpose(image, (1, 2, 0))
             
+            # Ensure uint8 format
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            
             fog = np.ones_like(image) * 255
-            return cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
+            result = cv2.addWeighted(image, 1 - self.fog_coef, fog, self.fog_coef, 0)
+            
+            # Convert back to original format if needed
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                result = np.transpose(result, (2, 0, 1))
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error in fog effect application: {str(e)}")
+            logger.error(f"Image shape: {image.shape if image is not None else 'None'}")
             return image
 
     def apply_to_sample(self, sample):
@@ -334,6 +381,38 @@ class DetectionWeatherEffects(DetectionTransform):
             return sample
         except Exception as e:
             logger.error(f"Error in WeatherEffects: {e}")
+            return sample
+
+class SafeDetectionRandomAffine(DetectionRandomAffine):
+    """Safe version of DetectionRandomAffine that ensures correct image format"""
+    def apply_to_sample(self, sample):
+        try:
+            image = sample.image
+            
+            # Convert to HWC if in CHW format
+            needs_transpose = len(image.shape) == 3 and image.shape[0] == 3
+            if needs_transpose:
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Ensure uint8 format
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            
+            # Store the corrected image
+            sample.image = image
+            
+            # Apply the affine transform
+            sample = super().apply_to_sample(sample)
+            
+            # Convert back to original format if needed
+            if needs_transpose:
+                sample.image = np.transpose(sample.image, (2, 0, 1))
+            
+            return sample
+            
+        except Exception as e:
+            logger.error(f"Error in affine transform: {str(e)}")
+            logger.error(f"Image shape: {image.shape if hasattr(sample, 'image') else 'No image'}")
             return sample
 
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
@@ -381,16 +460,16 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         transforms.append(DetectionTargetsFormatTransform())
         logger.info(f"  - Horizontal Flip (p={p})")
     
-    # Add random affine
+    # Add random affine with safe version
     if aug_config.get('affine', {}).get('enabled', False):
         if not aug_config.get('mosaic', {}).get('enabled', False):
-            transforms.append(DetectionRandomAffine(
+            transforms.append(SafeDetectionRandomAffine(
                 degrees=aug_config['affine'].get('degrees', 5.0),
                 scales=aug_config['affine'].get('scales', 0.1),
                 shear=aug_config['affine'].get('shear', 5.0),
                 target_size=input_size
             ))
-            logger.info("  - Random affine")
+            logger.info("  - Safe random affine")
 
     # Add new CCTV-specific augmentations
     if aug_config.get('motion_blur', {}).get('enabled', False):
