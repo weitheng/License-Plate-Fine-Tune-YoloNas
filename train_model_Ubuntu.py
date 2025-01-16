@@ -503,14 +503,23 @@ def main():
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
-                'transforms': get_transforms(dataset_config, config.input_size, is_training=True)
+                'transforms': get_transforms(dataset_config, config.input_size, is_training=True)  # Initial transforms without mosaic
             },
             dataloader_params={
-                'batch_size': 4,  # Start with a small batch size
+                'batch_size': 4,
                 'shuffle': True,
                 'drop_last': True
             }
         )
+
+        # Then update transforms with the dataloader
+        train_transforms = get_transforms(
+            dataset_config, 
+            config.input_size, 
+            is_training=True,
+            dataloader=train_data
+        )
+        train_data.dataset.transforms = train_transforms
 
         # Create validation dataloader
         val_data = create_dataloader_with_memory_management(
@@ -540,17 +549,6 @@ def main():
                     logger.info(f"Successfully increased batch size to {batch_size}")
             except Exception as e:
                 logger.warning(f"Keeping smaller batch size due to: {e}")
-
-        # Create transforms with dataloader
-        transforms = get_transforms(
-            dataset_config, 
-            config.input_size, 
-            is_training=True,
-            dataloader=train_data
-        )
-
-        # Update dataloader with transforms
-        train_data.dataset.transforms = transforms
 
         # Validate dataset contents before training
         validate_dataset_contents(combined_dir)
@@ -647,9 +645,6 @@ def main():
         # Close wandb run if it exists
         if wandb.run is not None:
             wandb.finish()
-
-# Call at start of main()
-log_environment_info()
 
 if __name__ == "__main__":
     main()
