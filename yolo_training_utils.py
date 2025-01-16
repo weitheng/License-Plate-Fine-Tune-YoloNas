@@ -265,16 +265,18 @@ def validate_yaml_schema(config: Dict[str, Any]) -> None:
             raise TypeError(f"Invalid type for {key}: expected {expected_type}, got {type(config[key])}")
 
 def log_environment_info():
-    """Log environment and library versions"""
-    logger.info("=== Environment Information ===")
-    logger.info(f"Python version: {sys.version}")
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"CUDA available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        logger.info(f"CUDA version: {torch.version.cuda}")
-        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-    logger.info(f"SuperGradients version: {super_gradients.__version__}")
-    logger.info("===========================")
+    """Log environment and library versions once"""
+    if not hasattr(log_environment_info, 'logged'):
+        logger.info("=== Environment Information ===")
+        logger.info(f"Python version: {sys.version.split()[0]}")
+        logger.info(f"PyTorch version: {torch.__version__}")
+        logger.info(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            logger.info(f"CUDA version: {torch.version.cuda}")
+            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+        logger.info(f"SuperGradients version: {super_gradients.__version__}")
+        logger.info("===========================")
+        log_environment_info.logged = True
 
 def cleanup_downloads():
     """Clean up downloaded files after processing"""

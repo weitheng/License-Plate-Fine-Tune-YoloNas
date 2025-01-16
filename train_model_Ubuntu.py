@@ -1,4 +1,7 @@
 import os
+# Disable SuperGradients automatic environment logging
+os.environ['CRASH_HANDLER'] = 'FALSE'
+
 import torch
 import wandb
 import logging
@@ -200,23 +203,25 @@ def worker_init_fn(worker_id):
 
 def main():
     try:
-        # Remove the log_environment_info() call from here since it's called by SuperGradients
+        # Set multiprocessing start method first
         if torch.cuda.is_available():
             mp.set_start_method('spawn', force=True)
-            logger.info("Set multiprocessing start method to 'spawn'")
-
+        
+        # Log environment info only once
+        log_environment_info()
+        
         # Parse command line arguments
         args = parse_args()
         
         validate_cuda_setup()
+        
         # Check GPU availability
         device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {device}")
+        
         if device == "cpu":
             logger.warning("No GPU detected - training will be slow!")
-            
-        # Add CUDA error handling setup right after device check
-        if device == "cuda":
+        else:
             setup_cuda_error_handling()
             logger.info("CUDA error handling configured")
 
@@ -475,7 +480,14 @@ def main():
         if not os.access(checkpoint_dir, os.W_OK):
             raise PermissionError(f"No write permission for checkpoint directory: {checkpoint_dir}")
 
-        # Initialize wandb after train_params is defined
+        # Initialize trainer first
+        trainer = Trainer(
+            experiment_name='coco_license_plate_detection',
+            ckpt_root_dir=os.path.abspath(checkpoint_dir),
+            device=device
+        )
+
+        # Then initialize wandb
         try:
             logger.info("Initializing Weights & Biases...")
             wandb.init(
@@ -550,12 +562,6 @@ def main():
 
         # Update dataloader with transforms
         train_data.dataset.transforms = transforms
-
-        # Initialize trainer with explicit absolute paths
-        trainer = Trainer(
-            experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir)  # Remove training_params from here
-        )
 
         # Validate dataset contents before training
         validate_dataset_contents(combined_dir)
