@@ -181,6 +181,17 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         logger.error(f"Error creating dataloader: {e}")
         raise
 
+# First, create a function to initialize transforms without mosaic
+def create_initial_transforms(dataset_config, input_size):
+    """Create initial transforms without mosaic augmentation"""
+    return get_transforms(
+        dataset_config, 
+        input_size, 
+        is_training=True, 
+        dataloader=None,
+        skip_mosaic=True  # Add this parameter
+    )
+
 def main():
     try:
         # Set multiprocessing start method first
@@ -495,7 +506,10 @@ def main():
                 'resume_path': None
             })
 
-        # Create training dataloader first
+        # Create initial transforms without mosaic
+        initial_transforms = create_initial_transforms(dataset_config, config.input_size)
+        
+        # Create training dataloader with initial transforms
         train_data = create_dataloader_with_memory_management(
             dataset_params={
                 'data_dir': combined_dir,
@@ -503,24 +517,30 @@ def main():
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
-                'transforms': get_transforms(dataset_config, config.input_size, is_training=True)  # Initial transforms without mosaic
+                'transforms': initial_transforms
             },
             dataloader_params={
                 'batch_size': 4,
                 'shuffle': True,
-                'drop_last': True
+                'drop_last': True,
+                'persistent_workers': True,  # Add this
+                'pin_memory': True if torch.cuda.is_available() else False
             }
         )
-
-        # Then update transforms with the dataloader
+        
+        # Now create the full transforms including mosaic
         train_transforms = get_transforms(
             dataset_config, 
             config.input_size, 
             is_training=True,
-            dataloader=train_data
+            dataloader=train_data,
+            skip_mosaic=False  # Explicitly enable mosaic
         )
+        
+        # Update the dataset transforms
         train_data.dataset.transforms = train_transforms
-
+        logger.info("✓ Training transforms updated with mosaic augmentation")
+        
         # Create validation dataloader
         val_data = create_dataloader_with_memory_management(
             dataset_params={

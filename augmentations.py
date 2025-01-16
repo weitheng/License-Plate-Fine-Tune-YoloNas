@@ -440,7 +440,12 @@ class SafeValidationStandardize(DetectionStandardize):
             logger.error(f"Error in standardization: {e}")
             return sample
 
-def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int], dataloader=None) -> List[DetectionTransform]:
+def create_train_transforms(
+    config: Dict[str, Any], 
+    input_size: Tuple[int, int], 
+    dataloader=None,
+    skip_mosaic: bool = False
+) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
     transforms = []
@@ -479,21 +484,24 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int],
         transforms.append(DetectionTargetsFormatTransform())
         logger.info(f"  - Horizontal Flip (p={p})")
     
-    # Mosaic with safety checks
-    if aug_config.get('mosaic', {}).get('enabled', False):
-        transforms.append(SafeDetectionMosaic(
-            input_dim=input_size,
-            prob=aug_config['mosaic'].get('p', 0.5),
-            dataloader=dataloader,  # Pass the dataloader
-            enable_memory_cache=True  # Enable caching
-        ))
-        # Ensure consistent size after mosaic
-        transforms.append(SafeDetectionPaddedRescale(
-            input_dim=input_size,
-            pad_value=114,
-            max_targets=100
-        ))
-        logger.info("  - Mosaic augmentation with rescale")
+    # Only add mosaic if not skipped and dataloader is provided
+    if not skip_mosaic and aug_config.get('mosaic', {}).get('enabled', False):
+        if dataloader is not None:
+            transforms.append(SafeDetectionMosaic(
+                input_dim=input_size,
+                prob=aug_config['mosaic'].get('p', 0.5),
+                dataloader=dataloader,
+                enable_memory_cache=True
+            ))
+            # Ensure consistent size after mosaic
+            transforms.append(SafeDetectionPaddedRescale(
+                input_dim=input_size,
+                pad_value=114,
+                max_targets=100
+            ))
+            logger.info("  - Added mosaic augmentation with rescale")
+        else:
+            logger.warning("Skipping mosaic augmentation - no dataloader provided")
     
     # Safe affine transform
     if aug_config.get('affine', {}).get('enabled', False):
@@ -631,10 +639,21 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
     logger.info("  - Added safe validation transforms with additional checks")
     return transforms
 
-def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True, dataloader=None) -> List[DetectionTransform]:
+def get_transforms(
+    config: Dict[str, Any], 
+    input_size: Tuple[int, int], 
+    is_training: bool = True, 
+    dataloader=None,
+    skip_mosaic: bool = False
+) -> List[DetectionTransform]:
     """Get transforms based on whether it's training or validation."""
     if is_training:
-        return create_train_transforms(config, input_size, dataloader=dataloader)
+        return create_train_transforms(
+            config, 
+            input_size, 
+            dataloader=dataloader,
+            skip_mosaic=skip_mosaic
+        )
     return create_val_transforms(input_size)
 
 class SafeValidationBatch:
