@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from yolo_training_utils import assess_hardware_capabilities
 
 @dataclass
 class TrainingConfig:
@@ -24,7 +25,7 @@ class TrainingConfig:
     batch_size: int = 32
     input_size: tuple = (640, 640)
     initial_lr: float = 1e-3
-    warmup_epochs: int = 3
+    warmup_epochs: int = 5  # Increased from 3
     num_workers: int = 8
     
     # Model parameters
@@ -37,6 +38,22 @@ class TrainingConfig:
     weight_decay: float = 5e-4
     dropout: float = 0.1
     label_smoothing: float = 0.1
+    
+    # Optimizer parameters
+    momentum: float = 0.937
+    nesterov: bool = True
+    
+    # Learning rate parameters
+    warmup_initial_lr_factor: float = 0.001  # Initial LR will be initial_lr * this factor
+    backbone_lr_factor: float = 0.05  # Backbone LR will be initial_lr * this factor
+    head_lr_factor: float = 0.1  # Head LR will be initial_lr * this factor
+    lr_cooldown_epochs: int = 15
+    
+    # Advanced training parameters
+    gradient_clip_val: float = 0.5
+    clip_grad_norm: float = 1.0
+    batch_accumulate: int = 2
+    ema_decay: float = 0.9999
     
     # Export parameters
     export_image_size: tuple = (320, 320)
@@ -71,11 +88,33 @@ class TrainingConfig:
     
     @classmethod
     def from_gpu_memory(cls, gpu_memory_gb: float) -> "TrainingConfig":
-        config = cls()
-        if gpu_memory_gb < 8:
-            config.batch_size = 4
+        """Create config based on available GPU memory and hardware capabilities"""
+        # Get hardware recommendations
+        hw_params = assess_hardware_capabilities()
+        
+        config = cls(
+            batch_size=hw_params['batch_size'],
+            num_workers=hw_params['num_workers']
+        )
+        
+        # Adjust other parameters based on GPU memory
+        if gpu_memory_gb > 20:  # High-end GPU
+            config.initial_lr = 0.001
+            config.input_size = (640, 640)
+            config.warmup_epochs = 5
+            config.max_predictions = 300
+            config.export_image_size = (640, 640)
+        elif gpu_memory_gb < 8:  # Low-end GPU
             config.initial_lr = 5e-4
-        elif gpu_memory_gb < 16:
-            config.batch_size = 8
+            config.input_size = (416, 416)
+            config.warmup_epochs = 3
+            config.max_predictions = 200
+            config.export_image_size = (416, 416)
+        else:  # Mid-range GPU
             config.initial_lr = 7e-4
+            config.input_size = (512, 512)
+            config.warmup_epochs = 4
+            config.max_predictions = 250
+            config.export_image_size = (512, 512)
+            
         return config.validate()

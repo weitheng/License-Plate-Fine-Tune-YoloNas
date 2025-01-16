@@ -8,6 +8,8 @@ from typing import Tuple, Dict, Any, Optional
 import logging
 import sys
 import super_gradients
+from super_gradients.training.utils.callbacks import PhaseCallback, Phase
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ def assess_hardware_capabilities() -> Dict[str, int]:
             elif gpu_memory < 16:
                 recommended_batch_size = 16
             elif gpu_memory < 24:
-                recommended_batch_size = 16 #decreased from 24 to 16
+                recommended_batch_size = 18 #decreased from 24 to 16
             else:
                 recommended_batch_size = 32
                 
@@ -361,3 +363,64 @@ def setup_cuda_error_handling():
         
         # Enable anomaly detection in PyTorch
         torch.autograd.set_detect_anomaly(True)
+
+class GPUMonitorCallback(PhaseCallback):
+    """Callback to monitor GPU utilization during training"""
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_BATCH_END)
+        try:
+            nvmlInit()
+            self.handle = nvmlDeviceGetHandleByIndex(0)
+            self.enabled = True
+        except:
+            self.enabled = False
+        self.last_log = 0
+        
+    def __call__(self, context):
+        if not self.enabled:
+            return
+        
+        current_time = time.time()
+        if current_time - self.last_log >= 30:  # Log every 30 seconds
+            try:
+                util = nvmlDeviceGetUtilizationRates(self.handle)
+                logger.info(f"GPU Utilization: {util.gpu}%, Memory: {util.memory}%")
+            except:
+                pass
+            self.last_log = current_time
+
+def pin_memory(dataloader):
+    """Pin memory for dataloader tensors if CUDA is available"""
+    if torch.cuda.is_available():
+        for batch in dataloader:
+            if isinstance(batch, (tuple, list)):
+                batch = [b.pin_memory() if torch.is_tensor(b) else b for b in batch]
+            elif torch.is_tensor(batch):
+                batch = batch.pin_memory()
+    return dataloader
+
+def check_batch_device(dataloader, name=""):
+    """Check and log the device location of batches from a dataloader"""
+    try:
+        batch = next(iter(dataloader))
+        if isinstance(batch, (tuple, list)):
+            sample = batch[0]
+        else:
+            sample = batch
+            
+        if torch.is_tensor(sample):
+            logger.info(f"{name} batch device: {sample.device}")
+            if torch.cuda.is_available() and not sample.is_cuda:
+                logger.warning(f"{name} data is not on GPU!")
+    except Exception as e:
+        logger.error(f"Error checking {name} batch device: {e}")
+
+def create_initial_transforms(dataset_config, input_size):
+    """Create initial transforms without mosaic augmentation"""
+    return get_transforms(
+        dataset_config, 
+        input_size, 
+        is_training=True, 
+        dataloader=None,
+        skip_mosaic=True
+    )

@@ -32,7 +32,8 @@ from yolo_training_utils import (
     validate_cuda_setup, monitor_gpu, setup_cuda_error_handling,
     validate_path_is_absolute, validate_training_config,
     log_environment_info, cleanup_downloads, monitor_memory,
-    verify_checkpoint
+    verify_checkpoint, GPUMonitorCallback, pin_memory,
+    check_batch_device, create_initial_transforms
 )
 from torch.optim.lr_scheduler import OneCycleLR
 from typing import Optional, List, Dict, Any, Tuple
@@ -148,10 +149,10 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         if torch.cuda.is_available():
             # Use more conservative settings
             dataloader_params.update({
-                'num_workers': 2,  # Use minimal workers
+                'num_workers': min(8, os.cpu_count()),  # Increase workers
                 'pin_memory': True,
-                'persistent_workers': True,  # Changed to True
-                'prefetch_factor': 2,
+                'persistent_workers': True,
+                'prefetch_factor': 4,  # Increase prefetch
                 'timeout': 300,
                 'multiprocessing_context': 'spawn',
                 'worker_init_fn': worker_init_fn
@@ -187,32 +188,6 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         logger.error(f"Error creating dataloader: {e}")
         logger.error("Dataloader creation failed", exc_info=True)
         raise
-
-# First, create a function to initialize transforms without mosaic
-def create_initial_transforms(dataset_config, input_size):
-    """Create initial transforms without mosaic augmentation"""
-    return get_transforms(
-        dataset_config, 
-        input_size, 
-        is_training=True, 
-        dataloader=None,
-        skip_mosaic=True  # Add this parameter
-    )
-
-def check_batch_device(dataloader, name=""):
-    try:
-        batch = next(iter(dataloader))
-        if isinstance(batch, (tuple, list)):
-            sample = batch[0]
-        else:
-            sample = batch
-            
-        if torch.is_tensor(sample):
-            logger.info(f"{name} batch device: {sample.device}")
-            if torch.cuda.is_available() and not sample.is_cuda:
-                logger.warning(f"{name} data is not on GPU!")
-    except Exception as e:
-        logger.error(f"Error checking {name} batch device: {e}")
 
 def main():
     try:
@@ -392,6 +367,10 @@ def main():
             # Explicitly move model to GPU if available
             if torch.cuda.is_available():
                 model = model.cuda()
+                model = torch.compile(model)  # Use torch.compile for PyTorch 2.0+
+                model.train()
+                torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
+                torch.backends.cudnn.enabled = True
                 logger.info("Model moved to GPU")
             
             # Verify model device
@@ -434,11 +413,11 @@ def main():
             'silent_mode': False,
             'average_best_models': True,
             'warmup_mode': 'LinearEpochLRWarmup',
-            'warmup_initial_lr': config.initial_lr / 1000,  # Start with much lower learning rate
-            'lr_warmup_epochs': 5,  # Increase warmup epochs
+            'warmup_initial_lr': config.initial_lr * config.warmup_initial_lr_factor,
+            'lr_warmup_epochs': config.warmup_epochs,
             'initial_lr': {
-                'backbone': config.initial_lr * 0.05,  # Lower learning rate for backbone even more
-                'default': config.initial_lr * 0.1  # Lower initial learning rate
+                'backbone': config.initial_lr * config.backbone_lr_factor,
+                'default': config.initial_lr * config.head_lr_factor
             },
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
@@ -487,30 +466,29 @@ def main():
             'label_smoothing': config.label_smoothing,
             'optimizer': 'SGD',
             'optimizer_params': {
-                'weight_decay': config.weight_decay * 0.1,  # Reduce weight decay
-                'momentum': 0.937,
-                'nesterov': True
+                'weight_decay': config.weight_decay,
+                'momentum': config.momentum,
+                'nesterov': config.nesterov
             },
-            'gradient_clip_val': 0.5,  # Add stricter gradient clipping
-            'clip_grad_norm': 1.0,  # Add gradient norm clipping
+            'gradient_clip_val': config.gradient_clip_val,
+            'clip_grad_norm': config.clip_grad_norm,
             'zero_weight_decay_on_bias_and_bn': True,
-            'loss_logging_items_names': ['Loss', 'Precision', 'Recall'],
-            'accelerator': 'cuda' if torch.cuda.is_available() else 'cpu',
-            'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-            'lr_cooldown_epochs': 15,  # Increase cooldown epochs
-            'multiply_head_lr': 0.1,  # Reduce head learning rate
-            'criterion_params': {
-                'alpha': 0.25,
-                'gamma': 1.5
-            },
-            'ema': True,  # Enable EMA
+            'accelerator': device,
+            'device': device,
+            'lr_cooldown_epochs': config.lr_cooldown_epochs,
+            'multiply_head_lr': config.head_lr_factor,
+            'ema': True,
             'ema_params': {
-                'decay': 0.9999,
+                'decay': config.ema_decay,
                 'decay_type': 'threshold'
             },
-            'batch_accumulate': 4,  # Add gradient accumulation
-            'sync_bn': True if torch.cuda.device_count() > 1 else False,  # Sync BatchNorm if multiple GPUs
-            'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],  # Save checkpoints at these epochs
+            'batch_accumulate': config.batch_accumulate,
+            'sync_bn': False,  # Disable if using single GPU
+            'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],
+            'phase_callbacks': [
+                GradientMonitorCallback(),
+                GPUMonitorCallback()
+            ]
         }
 
         # Check for existing checkpoint
@@ -748,6 +726,10 @@ def main():
                 normalize=True,
                 device=device
             )
+
+        # After creating dataloaders
+        train_data = pin_memory(train_data)
+        val_data = pin_memory(val_data)
 
     except Exception as e:
         logger.error(f"Error during training: {e}")
