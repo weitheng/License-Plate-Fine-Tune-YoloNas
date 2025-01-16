@@ -134,19 +134,81 @@ def validate_path_is_absolute(path: str, description: str) -> None:
     if not os.access(directory, os.W_OK):
         raise PermissionError(f"No write permission for {description} directory: {directory}")
 
-def validate_training_config(train_params: dict) -> None:
-    """Validate training configuration parameters"""
-    required_keys = ['resume', 'loss', 'metric_to_watch',
-                    'valid_metrics_list', 'max_epochs', 'initial_lr']
-    for key in required_keys:
-        if key not in train_params:
-            raise ValueError(f"Missing required training parameter: {key}")
-            
-    # Validate numeric parameters
-    if train_params['initial_lr'] <= 0:
-        raise ValueError("Learning rate must be positive")
-    if train_params['max_epochs'] <= 0:
-        raise ValueError("Number of epochs must be positive")
+def validate_training_config(train_params: Dict[str, Any]) -> None:
+    """Validate training configuration parameters."""
+    if not isinstance(train_params, dict):
+        raise ValueError("train_params must be a dictionary")
+
+    # Validate initial learning rate
+    initial_lr = train_params.get('initial_lr', {})
+    if isinstance(initial_lr, dict):
+        # Check if we have at least default learning rate
+        if 'default' not in initial_lr:
+            raise ValueError("initial_lr dict must contain 'default' key")
+        # Validate each learning rate value
+        for key, lr in initial_lr.items():
+            if not isinstance(lr, (int, float)) or lr <= 0:
+                raise ValueError(f"Invalid learning rate for {key}: {lr}")
+    else:
+        # Handle case where initial_lr is a single value
+        if not isinstance(initial_lr, (int, float)) or initial_lr <= 0:
+            raise ValueError(f"Invalid initial learning rate: {initial_lr}")
+
+    # Validate other required parameters
+    required_params = [
+        'max_epochs',
+        'loss',
+        'optimizer',
+        'optimizer_params',
+        'train_metrics_list',
+        'valid_metrics_list'
+    ]
+    
+    for param in required_params:
+        if param not in train_params:
+            raise ValueError(f"Missing required parameter: {param}")
+
+    # Validate optimizer parameters
+    optimizer_params = train_params.get('optimizer_params', {})
+    if not isinstance(optimizer_params, dict):
+        raise ValueError("optimizer_params must be a dictionary")
+
+    # Validate weight decay
+    weight_decay = optimizer_params.get('weight_decay', 0)
+    if not isinstance(weight_decay, (int, float)) or weight_decay < 0:
+        raise ValueError(f"Invalid weight decay: {weight_decay}")
+
+    # Validate epochs
+    max_epochs = train_params.get('max_epochs', 0)
+    if not isinstance(max_epochs, int) or max_epochs <= 0:
+        raise ValueError(f"Invalid max_epochs: {max_epochs}")
+
+    # Validate warmup epochs if present
+    warmup_epochs = train_params.get('lr_warmup_epochs', 0)
+    if not isinstance(warmup_epochs, int) or warmup_epochs < 0:
+        raise ValueError(f"Invalid warmup epochs: {warmup_epochs}")
+    if warmup_epochs >= max_epochs:
+        raise ValueError("warmup_epochs must be less than max_epochs")
+
+    # Validate batch size if present
+    batch_size = train_params.get('batch_size', None)
+    if batch_size is not None:
+        if not isinstance(batch_size, int) or batch_size <= 0:
+            raise ValueError(f"Invalid batch size: {batch_size}")
+
+    # Validate early stopping patience if present
+    patience = train_params.get('early_stopping_patience', None)
+    if patience is not None:
+        if not isinstance(patience, int) or patience <= 0:
+            raise ValueError(f"Invalid early stopping patience: {patience}")
+
+    # Validate gradient clipping if present
+    grad_clip = train_params.get('gradient_clip_val', None)
+    if grad_clip is not None:
+        if not isinstance(grad_clip, (int, float)) or grad_clip <= 0:
+            raise ValueError(f"Invalid gradient clip value: {grad_clip}")
+
+    logger.info("Training configuration validation completed")
 
 def load_dataset_config(config_path: str) -> Dict[str, Any]:
     """
