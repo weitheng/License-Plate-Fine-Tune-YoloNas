@@ -56,6 +56,36 @@ from dataset_validation_utils import (
     EXPECTED_TOTAL_TRAIN, EXPECTED_TOTAL_VAL
 )
 
+# First, move the callback classes to the top of the file (after imports)
+class GradientClippingCallback(PhaseCallback):
+    def __init__(self, clip_value=0.1):
+        super().__init__(phase=Phase.TRAIN_BATCH_STEP)
+        self.clip_value = clip_value
+
+    def __call__(self, context: PhaseContext):
+        if hasattr(context.trainer, 'net'):
+            torch.nn.utils.clip_grad_norm_(
+                context.trainer.net.parameters(),
+                self.clip_value
+            )
+
+class LRMonitorCallback(PhaseCallback):
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_BATCH_STEP)
+        self.logger = logging.getLogger(__name__)
+        self.last_log = 0
+
+    def __call__(self, context: PhaseContext):
+        if hasattr(context.trainer, 'optimizer'):
+            current_time = time.time()
+            if current_time - self.last_log >= 30:  # Log every 30 seconds
+                for param_group in context.trainer.optimizer.param_groups:
+                    current_lr = param_group.get('lr', 0)
+                    self.logger.info(f"Current learning rate: {current_lr:.2e}")
+                    if wandb.run is not None:
+                        wandb.log({'learning_rate': current_lr})
+                self.last_log = current_time
+
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
     # Format for both file and terminal
@@ -509,7 +539,9 @@ def main():
             'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],
             'phase_callbacks': [
                 GradientMonitorCallback(),
-                GPUMonitorCallback()
+                GPUMonitorCallback(),
+                GradientClippingCallback(clip_value=config.gradient_clip_val),
+                LRMonitorCallback()
             ]
         }
 
@@ -780,47 +812,6 @@ def main():
         # Close wandb run if it exists
         if wandb.run is not None:
             wandb.finish()
-
-# Add gradient clipping callback
-class GradientClippingCallback(PhaseCallback):
-    def __init__(self, clip_value=0.1):
-        super().__init__(phase=Phase.TRAIN_BATCH_STEP)
-        self.clip_value = clip_value
-
-    def __call__(self, context: PhaseContext):
-        if hasattr(context.trainer, 'net'):
-            torch.nn.utils.clip_grad_norm_(
-                context.trainer.net.parameters(),
-                self.clip_value
-            )
-
-# Add the callback to train_params
-train_params['phase_callbacks'].append(GradientClippingCallback(clip_value=config.gradient_clip_val))
-
-class LRMonitorCallback(PhaseCallback):
-    def __init__(self):
-        super().__init__(phase=Phase.TRAIN_BATCH_STEP)
-        self.logger = logging.getLogger(__name__)
-        self.last_log = 0
-
-    def __call__(self, context: PhaseContext):
-        if hasattr(context.trainer, 'optimizer'):
-            current_time = time.time()
-            if current_time - self.last_log >= 30:  # Log every 30 seconds
-                for param_group in context.trainer.optimizer.param_groups:
-                    current_lr = param_group.get('lr', 0)
-                    self.logger.info(f"Current learning rate: {current_lr:.2e}")
-                    if wandb.run is not None:
-                        wandb.log({'learning_rate': current_lr})
-                self.last_log = current_time
-
-# Add the callback to train_params
-train_params['phase_callbacks'].extend([
-    GradientMonitorCallback(),
-    GPUMonitorCallback(),
-    GradientClippingCallback(clip_value=config.gradient_clip_val),
-    LRMonitorCallback()
-])
 
 if __name__ == "__main__":
     main()
