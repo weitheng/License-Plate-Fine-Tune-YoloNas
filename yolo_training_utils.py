@@ -432,33 +432,25 @@ class GradientMonitorCallback(PhaseCallback):
         """Called during training to monitor gradients"""
         try:
             self.batch_counter += 1
-            if hasattr(context.trainer, 'net'):
-                model = context.trainer.net
+            if hasattr(context, 'model'):  # Changed from context.trainer
                 total_norm = 0.0
                 param_count = 0
                 has_nan = False
                 grad_norms = []
                 
                 # Check gradients
-                for name, p in model.named_parameters():
+                for name, p in context.model.named_parameters():
                     if p.grad is not None:
                         if torch.isnan(p.grad).any() or torch.isinf(p.grad).any():
                             has_nan = True
                             self.nan_counter += 1
                             self.logger.warning(f"NaN/Inf detected in gradients for parameter: {name}")
+                            continue  # Skip this parameter
                             
-                            # Reset gradients for this parameter
-                            p.grad.data.zero_()
-                            
-                            if self.nan_counter >= self.max_nan_tolerance:
-                                self.logger.error("Too many NaN values detected. Stopping training.")
-                                context.trainer.stop_training()
-                                return
-                        else:
-                            param_norm = p.grad.data.norm(2)
-                            grad_norms.append(param_norm.item())
-                            total_norm += param_norm.item() ** 2
-                            param_count += 1
+                        param_norm = p.grad.data.norm(2)
+                        grad_norms.append(param_norm.item())
+                        total_norm += param_norm.item() ** 2
+                        param_count += 1
 
                 if param_count > 0:
                     total_norm = total_norm ** 0.5
@@ -482,10 +474,7 @@ class GradientMonitorCallback(PhaseCallback):
                     
                     # Handle gradient explosion
                     if total_norm > self.max_grad_norm:
-                        self.logger.warning(f"Large gradient norm detected: {total_norm:.2f}")
-                        # Clip gradients
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), self.max_grad_norm)
+                        torch.nn.utils.clip_grad_norm_(context.model.parameters(), self.max_grad_norm)
                         
         except Exception as e:
             self.logger.error(f"Error in gradient monitoring: {str(e)}")
-            self.logger.debug("Error details:", exc_info=True)

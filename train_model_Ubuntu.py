@@ -453,21 +453,18 @@ def main():
                 model.use_gradient_checkpointing()
             
             if torch.cuda.is_available():
-                # Remove channels_last and compile for now
+                model = model.cuda()
+                model = torch.compile(model)  # Re-enable compile
                 model.train()
                 
-                # Use more conservative CUDA settings
-                torch.backends.cudnn.benchmark = False  # Disable for stability
-                torch.backends.cudnn.deterministic = True  # Enable for reproducibility
+                # Re-enable performance optimizations
+                torch.backends.cudnn.benchmark = True
+                torch.backends.cudnn.deterministic = False
                 torch.backends.cudnn.enabled = True
                 
-                # More conservative memory settings
+                # Use more reasonable memory settings
                 torch.cuda.empty_cache()
-                torch.cuda.set_per_process_memory_fraction(0.75)  # Reduced from 0.85
-                
-                # Initialize weights with double precision temporarily
-                model = model.double()
-                model = model.float()  # Convert back to float
+                torch.cuda.set_per_process_memory_fraction(0.95)
             
             logger.info(f"Model device: {next(model.parameters()).device}")
             logger.success("✓ Model initialized successfully")
@@ -517,7 +514,7 @@ def main():
             'lr_mode': 'cosine',
             'max_epochs': config.num_epochs,
             'early_stopping_patience': config.early_stopping_patience,
-            'mixed_precision': False,  # Disable mixed precision temporarily
+            'mixed_precision': True,  # Re-enable mixed precision
             'loss': loss_fn,
             'criterion_params': {
                 'label_smoothing': 0.05,  # Reduced from 0.1 for stability
@@ -571,13 +568,11 @@ def main():
             'optimizer': 'AdamW',
             'optimizer_params': {
                 'weight_decay': config.weight_decay,
-                'betas': (0.9, 0.999),  # Back to default betas
+                'betas': (0.937, 0.999),
                 'eps': 1e-8,
                 'lr': config.initial_lr,
                 'amsgrad': True,
-                'foreach': False,  # Disable foreach
-                'maximize': False,
-                'capturable': False
+                'foreach': True,  # Re-enable foreach for performance
             },
             'zero_weight_decay_on_bias_and_bn': True,
             'lr_mode': 'cosine',
@@ -597,7 +592,7 @@ def main():
                 'decay_type': 'threshold',
                 'warmup_epochs': config.warmup_epochs,
             },
-            'batch_accumulate': 1,  # Start with no accumulation
+            'batch_accumulate': config.batch_accumulate,  # Use configured batch accumulation
             'sync_bn': False,  # Disable if using single GPU
             'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],
             'phase_callbacks': [
@@ -607,6 +602,11 @@ def main():
                 LRMonitorCallback(),
                 LRSchedulerCallback()
             ],
+            'mixed_precision_params': {
+                'enabled': True,
+                'initial_scale': 2**10,
+                'growth_interval': 2000,
+            }
         }
 
         # Check for existing checkpoint
