@@ -415,16 +415,6 @@ def check_batch_device(dataloader, name=""):
     except Exception as e:
         logger.error(f"Error checking {name} batch device: {e}")
 
-def create_initial_transforms(dataset_config, input_size):
-    """Create initial transforms without mosaic augmentation"""
-    return get_transforms(
-        dataset_config, 
-        input_size, 
-        is_training=True, 
-        dataloader=None,
-        skip_mosaic=True
-    )
-
 class GradientMonitorCallback(PhaseCallback):
     """Callback to monitor gradient norms during training"""
     def __init__(self):

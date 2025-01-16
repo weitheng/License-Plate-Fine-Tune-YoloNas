@@ -33,7 +33,7 @@ from yolo_training_utils import (
     validate_path_is_absolute, validate_training_config,
     log_environment_info, cleanup_downloads, monitor_memory,
     verify_checkpoint, GPUMonitorCallback, pin_memory,
-    check_batch_device, create_initial_transforms, GradientMonitorCallback
+    check_batch_device, GradientMonitorCallback
 )
 from torch.optim.lr_scheduler import OneCycleLR
 from typing import Optional, List, Dict, Any, Tuple
@@ -188,6 +188,16 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         logger.error(f"Error creating dataloader: {e}")
         logger.error("Dataloader creation failed", exc_info=True)
         raise
+
+def create_initial_transforms(dataset_config, input_size):
+    """Create initial transforms without mosaic augmentation"""
+    return get_transforms(
+        dataset_config, 
+        input_size, 
+        is_training=True, 
+        dataloader=None,
+        skip_mosaic=True
+    )
 
 def main():
     try:
