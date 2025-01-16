@@ -378,7 +378,7 @@ def main():
             'resume': False,
             'silent_mode': False,
             'average_best_models': True,
-            'warmup_mode': 'linear_epoch_step',
+            'warmup_mode': 'LinearEpochLRWarmup',
             'warmup_initial_lr': config.initial_lr / 100,
             'lr_warmup_epochs': config.warmup_epochs,
             'initial_lr': config.initial_lr,

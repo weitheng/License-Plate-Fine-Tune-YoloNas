@@ -686,8 +686,9 @@ class SafeDetectionTransform(DetectionTransform):
         """Validate and normalize image format"""
         try:
             if image is None:
-                raise ValueError("Empty image")
-                
+                logger.error("Empty image received")
+                return None
+            
             # Convert to numpy if tensor
             if torch.is_tensor(image):
                 image = image.cpu().numpy()
@@ -695,6 +696,9 @@ class SafeDetectionTransform(DetectionTransform):
             # Ensure HWC format
             if len(image.shape) == 3 and image.shape[0] == 3:
                 image = np.transpose(image, (1, 2, 0))
+            elif len(image.shape) == 2:
+                # Handle grayscale images
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
             
             # Ensure uint8 format
             if image.dtype != np.uint8:
@@ -703,9 +707,14 @@ class SafeDetectionTransform(DetectionTransform):
                 else:
                     image = image.astype(np.uint8)
             
+            # Validate final shape
+            if len(image.shape) != 3 or image.shape[2] != 3:
+                logger.error(f"Invalid image shape after processing: {image.shape}")
+                return None
+            
             return image
         except Exception as e:
-            logger.error(f"Error validating image: {e}")
+            logger.error(f"Error validating image: {str(e)}")
             return None
 
 class SafeDetectionMosaic(SafeDetectionTransform):
@@ -753,6 +762,10 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                 logger.error("Empty dataset in dataloader")
                 return None
             
+            # Add debug logging
+            logger.debug(f"Dataset type: {type(dataset)}")
+            logger.debug(f"Dataset length: {len(dataset)}")
+            
             # Create lock if needed
             if not hasattr(self, '_lock'):
                 self._lock = mp.Lock()
@@ -760,6 +773,7 @@ class SafeDetectionMosaic(SafeDetectionTransform):
             with self._lock:
                 # Check if we're in a worker process
                 is_worker = mp.current_process().name != 'MainProcess'
+                logger.debug(f"Process type: {'worker' if is_worker else 'main'}")
                 
                 if torch.cuda.is_available() and not is_worker:
                     # Setup CUDA stream when needed (only in main process)
@@ -806,9 +820,28 @@ class SafeDetectionMosaic(SafeDetectionTransform):
             dataset = self.dataloader.dataset
             idx = random.randint(0, len(dataset) - 1)
             sample = dataset[idx]
-            return self.validate_image(sample.image)
+            
+            # Handle different dataset return types
+            if isinstance(sample, tuple):
+                # If sample is a tuple, assume first element is image
+                image = sample[0]
+            elif hasattr(sample, 'image'):
+                # If sample is an object with image attribute
+                image = sample.image
+            elif isinstance(sample, dict):
+                # If sample is a dictionary
+                image = sample.get('image')
+            else:
+                # If none of the above, assume sample is the image
+                image = sample
+            
+            if image is None:
+                logger.error("Failed to extract image from sample")
+                return None
+            
+            return self.validate_image(image)
         except Exception as e:
-            logger.error(f"Error getting random image on CPU: {e}")
+            logger.error(f"Error getting random image on CPU: {str(e)}")
             return None
     
     def clear_cache(self):
