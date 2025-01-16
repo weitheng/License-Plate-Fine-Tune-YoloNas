@@ -507,24 +507,90 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     return transforms
 
 def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransform]:
-    """Create validation transforms."""
+    """Create validation transforms with additional safety checks."""
     logger.info("Setting up validation transforms:")
     
     # Clear CUDA cache before validation
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        torch.cuda.synchronize()  # Ensure all CUDA operations are complete
+        torch.cuda.synchronize()
+    
+    class SafeValidationRescale(DetectionPaddedRescale):
+        """Safe version of DetectionPaddedRescale for validation"""
+        def apply_to_sample(self, sample):
+            try:
+                # Ensure image is in correct format
+                if sample.image is None:
+                    raise ValueError("Empty image in sample")
+                    
+                # Convert to numpy if tensor
+                if torch.is_tensor(sample.image):
+                    sample.image = sample.image.cpu().numpy()
+                
+                # Ensure HWC format for validation
+                if len(sample.image.shape) == 3 and sample.image.shape[0] == 3:
+                    sample.image = np.transpose(sample.image, (1, 2, 0))
+                
+                # Ensure uint8 format
+                if sample.image.dtype != np.uint8:
+                    if sample.image.max() <= 1.0:
+                        sample.image = (sample.image * 255).astype(np.uint8)
+                    else:
+                        sample.image = sample.image.astype(np.uint8)
+                
+                # Validate targets if present
+                if hasattr(sample, 'target'):
+                    if sample.target is not None:
+                        # Ensure targets are within image bounds
+                        h, w = sample.image.shape[:2]
+                        sample.target = sample.target[
+                            (sample.target[:, 1] < w) & 
+                            (sample.target[:, 2] < h) & 
+                            (sample.target[:, 1] >= 0) & 
+                            (sample.target[:, 2] >= 0)
+                        ]
+                
+                # Apply parent class transform
+                return super().apply_to_sample(sample)
+                
+            except Exception as e:
+                logger.error(f"Error in validation transform: {str(e)}")
+                logger.error(f"Image shape: {sample.image.shape if hasattr(sample, 'image') else 'No image'}")
+                return sample
+    
+    class SafeValidationStandardize(DetectionStandardize):
+        """Safe version of DetectionStandardize for validation"""
+        def apply_to_sample(self, sample):
+            try:
+                if sample.image is None:
+                    return sample
+                    
+                # Ensure float32 for standardization
+                sample.image = sample.image.astype(np.float32)
+                sample = super().apply_to_sample(sample)
+                
+                # Ensure no NaN or inf values
+                if np.any(np.isnan(sample.image)) or np.any(np.isinf(sample.image)):
+                    logger.error("Invalid values in standardized image")
+                    return sample
+                    
+                return sample
+            except Exception as e:
+                logger.error(f"Error in standardization: {str(e)}")
+                return sample
     
     transforms = [
         ImageShapeCorrection(),
-        SafeDetectionPaddedRescale(
+        SafeValidationRescale(
             input_dim=input_size,
             pad_value=114,
-            max_targets=100  # Limit maximum targets
+            max_targets=100,  # Limit maximum targets
+            allow_up_sampling=False  # Prevent up-sampling during validation
         ),
-        DetectionStandardize(max_value=255.0)
+        SafeValidationStandardize(max_value=255.0)
     ]
-    logger.info("  - Added shape correction, rescale and standardization")
+    
+    logger.info("  - Added safe validation transforms with additional checks")
     return transforms
 
 def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> List[DetectionTransform]:
