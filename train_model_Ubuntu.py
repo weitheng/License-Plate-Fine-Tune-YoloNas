@@ -1,13 +1,9 @@
 import os
 import torch
 import wandb
-import requests
-import zipfile
 import logging
 import time
 import coloredlogs
-import psutil
-import hashlib
 import argparse
 import textwrap
 import random
@@ -31,8 +27,6 @@ from yolo_training_utils import (
     verify_checkpoint
 )
 from torch.optim.lr_scheduler import OneCycleLR
-from pycocotools.coco import COCO
-from tqdm import tqdm
 from typing import Optional, List, Dict, Any, Tuple
 
 from config import TrainingConfig
