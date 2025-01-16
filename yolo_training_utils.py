@@ -11,6 +11,8 @@ import super_gradients
 
 logger = logging.getLogger(__name__)
 
+_ENVIRONMENT_LOGGED = False
+
 def assess_hardware_capabilities() -> Dict[str, int]:
     """
     Assess available hardware resources and return conservative training parameters.
@@ -266,17 +268,21 @@ def validate_yaml_schema(config: Dict[str, Any]) -> None:
 
 def log_environment_info():
     """Log environment and library versions once"""
-    if not hasattr(log_environment_info, 'logged'):
-        logger.info("=== Environment Information ===")
-        logger.info(f"Python version: {sys.version.split()[0]}")
-        logger.info(f"PyTorch version: {torch.__version__}")
-        logger.info(f"CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            logger.info(f"CUDA version: {torch.version.cuda}")
-            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-        logger.info(f"SuperGradients version: {super_gradients.__version__}")
-        logger.info("===========================")
-        log_environment_info.logged = True
+    global _ENVIRONMENT_LOGGED
+    if not _ENVIRONMENT_LOGGED:
+        try:
+            logger.info("=== Environment Information ===")
+            logger.info(f"Python version: {sys.version.split()[0]}")
+            logger.info(f"PyTorch version: {torch.__version__}")
+            logger.info(f"CUDA available: {torch.cuda.is_available()}")
+            if torch.cuda.is_available():
+                logger.info(f"CUDA version: {torch.version.cuda}")
+                logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+            logger.info(f"SuperGradients version: {super_gradients.__version__}")
+            logger.info("===========================")
+            _ENVIRONMENT_LOGGED = True
+        except Exception as e:
+            logger.error(f"Error logging environment info: {e}")
 
 def cleanup_downloads():
     """Clean up downloaded files after processing"""

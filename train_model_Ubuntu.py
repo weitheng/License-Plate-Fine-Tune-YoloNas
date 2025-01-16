@@ -1,6 +1,9 @@
 import os
-# Disable SuperGradients automatic environment logging
+# Disable all automatic logging and crash handlers
 os.environ['CRASH_HANDLER'] = 'FALSE'
+os.environ['DISABLE_SG_LOGGER'] = 'TRUE'
+os.environ['CONSOLE_LOG_LEVEL'] = 'WARNING'
+os.environ['DISABLE_CONSOLE_LOG'] = 'TRUE'
 
 import torch
 import wandb
@@ -14,6 +17,7 @@ import cv2
 import torch.multiprocessing as mp
 import numpy as np
 import super_gradients
+from super_gradients.common.environment.env_helpers import init_trainer
 
 from super_gradients.training import Trainer, models
 from super_gradients.common.object_names import Models
@@ -120,105 +124,86 @@ def parse_args():
                        help='Start training from scratch instead of resuming from checkpoint')
     return parser.parse_args()
 
+def worker_init_fn(worker_id):
+    """Initialize worker process"""
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+    
+    # Set lower priority for worker processes
+    try:
+        os.nice(10)  # Lower priority
+    except AttributeError:
+        pass  # os.nice not available on Windows
+        
+    # Clear CUDA cache for each worker
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 def create_dataloader_with_memory_management(dataset_params, dataloader_params, is_training=True):
     """Create dataloader with memory management"""
     if torch.cuda.is_available():
-        # Ensure spawn method for workers
-        dataloader_params['multiprocessing_context'] = 'spawn'
-        
-        # Calculate safe batch size based on available memory
-        total_memory = torch.cuda.get_device_properties(0).total_memory
-        available_memory = total_memory - torch.cuda.memory_allocated()
-        
-        # More conservative memory per sample estimate
-        estimated_memory_per_sample = 750 * 1024 * 1024  # 750MB per sample
-        max_safe_batch_size = max(1, int(available_memory / estimated_memory_per_sample))
-        
-        # Update batch size if needed
-        original_batch_size = dataloader_params['batch_size']
-        dataloader_params['batch_size'] = min(
-            original_batch_size,
-            max_safe_batch_size
-        )
-        if dataloader_params['batch_size'] < original_batch_size:
-            logger.warning(f"Reduced batch size from {original_batch_size} to {dataloader_params['batch_size']} due to memory constraints")
-        
-        # Enable pinned memory but disable persistent workers
-        dataloader_params['pin_memory'] = True
-        dataloader_params['persistent_workers'] = False
-        
-        # Reduce number of workers and increase timeout
-        dataloader_params['num_workers'] = min(
-            dataloader_params['num_workers'],
-            os.cpu_count() // 2 or 1  # Use half of available CPU cores
-        )
-        
-        # Increase timeout and add prefetch factor
-        dataloader_params['timeout'] = 120  # Increase timeout to 120 seconds
-        dataloader_params['prefetch_factor'] = 2  # Reduce prefetch factor
-        
-        # Add worker init function to set CPU affinity
-        dataloader_params['worker_init_fn'] = worker_init_fn
-    
-    # Extract max_targets from dataloader_params if present
-    max_targets = dataloader_params.pop('max_targets', None)
-    
+        # Use more conservative settings
+        dataloader_params.update({
+            'num_workers': 2,  # Use minimal workers
+            'pin_memory': True,
+            'persistent_workers': False,
+            'prefetch_factor': 1,  # Reduce prefetch to minimum
+            'timeout': 300,  # Increase timeout
+            'multiprocessing_context': 'spawn',
+            'worker_init_fn': worker_init_fn
+        })
+    else:
+        # CPU settings
+        dataloader_params.update({
+            'num_workers': 0,  # No workers for CPU
+            'pin_memory': False,
+            'persistent_workers': False
+        })
+
     try:
-        # Create the dataloader
+        # Create the dataloader with error handling
         dataloader = (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
             dataset_params=dataset_params,
             dataloader_params=dataloader_params
         )
         
-        # If max_targets was specified, set it on the dataset
-        if max_targets is not None and hasattr(dataloader.dataset, 'max_targets'):
-            dataloader.dataset.max_targets = max_targets
-        
+        # Verify the dataloader
+        try:
+            # Test the dataloader with a single batch
+            next(iter(dataloader))
+            logger.info(f"{'Training' if is_training else 'Validation'} dataloader initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to load first batch: {e}")
+            raise
+            
         return dataloader
     except Exception as e:
         logger.error(f"Error creating dataloader: {e}")
         raise
 
-def worker_init_fn(worker_id):
-    """Initialize worker process"""
-    # Set different seed for each worker
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-    
-    # Try to set CPU affinity if possible
-    try:
-        import os
-        import psutil
-        
-        process = psutil.Process()
-        # Get the number of CPU cores
-        cpu_count = os.cpu_count() or 1
-        # Assign worker to specific CPU core
-        worker_core = worker_id % cpu_count
-        process.cpu_affinity([worker_core])
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning(f"Could not set CPU affinity: {e}")
-
 def main():
     try:
+        # Initialize SuperGradients environment first
+        init_trainer()
+        
         # Set multiprocessing start method first
         if torch.cuda.is_available():
             mp.set_start_method('spawn', force=True)
         
-        # Log environment info only once
-        log_environment_info()
+        # Setup device using super_gradients before any other operations
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        super_gradients.setup_device(device=device)
+        
+        # Log environment info only once and only after device setup
+        if not hasattr(main, '_logged'):
+            log_environment_info()
+            main._logged = True
         
         # Parse command line arguments
         args = parse_args()
         
         validate_cuda_setup()
-        
-        # Setup device using super_gradients
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        super_gradients.setup_device(device=device)
         logger.info(f"Using device: {device}")
         
         if device == "cpu":
@@ -514,7 +499,7 @@ def main():
                 'resume_path': None
             })
 
-        # Create dataloaders after train_params is defined
+        # Create training dataloader first
         train_data = create_dataloader_with_memory_management(
             dataset_params={
                 'data_dir': combined_dir,
@@ -522,20 +507,19 @@ def main():
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
-                'transforms': []  # Start with empty transforms
+                'transforms': get_transforms(dataset_config, config.input_size, is_training=True)
             },
             dataloader_params={
-                'batch_size': hw_params['batch_size'],
-                'num_workers': hw_params['num_workers'],
+                'batch_size': 4,  # Start with a small batch size
                 'shuffle': True,
-                'pin_memory': torch.cuda.is_available(),
                 'drop_last': True
             }
         )
 
+        # Create validation dataloader
         val_data = create_dataloader_with_memory_management(
             dataset_params={
-                'data_dir': combined_dir,  # Using absolute path to combined dataset
+                'data_dir': combined_dir,
                 'images_dir': 'images/val',
                 'labels_dir': 'labels/val',
                 'classes': dataset_config['names'],
@@ -543,15 +527,23 @@ def main():
                 'transforms': get_transforms(dataset_config, config.input_size, is_training=False)
             },
             dataloader_params={
-                'batch_size': max(1, hw_params['batch_size'] // 2),  # Reduce validation batch size
-                'num_workers': max(1, hw_params['num_workers'] // 2),  # Reduce validation workers
+                'batch_size': 2,  # Even smaller batch size for validation
                 'shuffle': False,
-                'pin_memory': torch.cuda.is_available(),
-                'drop_last': False,
-                'persistent_workers': False,  # Disable persistent workers for validation
-                'max_targets': 100  # Move max_targets here in the dataloader params
+                'drop_last': False
             }
         )
+
+        # If dataloaders are created successfully, gradually increase batch size
+        if torch.cuda.is_available():
+            try:
+                # Test with larger batch sizes
+                for batch_size in [8, 16, hw_params['batch_size']]:
+                    torch.cuda.empty_cache()
+                    train_data.batch_sampler.batch_size = batch_size
+                    next(iter(train_data))  # Test if it works
+                    logger.info(f"Successfully increased batch size to {batch_size}")
+            except Exception as e:
+                logger.warning(f"Keeping smaller batch size due to: {e}")
 
         # Create transforms with dataloader
         transforms = get_transforms(
@@ -587,10 +579,15 @@ def main():
             'device': device,
         })
 
+        # Clear memory before training
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+        
         # Pass training_params to the train() method
         trainer.train(
             model=model,
-            training_params=train_params,  # Pass training_params here
+            training_params=train_params,
             train_loader=train_data,
             valid_loader=val_data
         )
