@@ -23,7 +23,12 @@ from super_gradients.training.losses import PPYoloELoss
 from super_gradients.training.metrics import DetectionMetrics_050
 from super_gradients.training.models.detection_models.pp_yolo_e import PPYoloEPostPredictionCallback
 from super_gradients.training.utils.callbacks import PhaseCallback, Phase
-from yolo_training_utils import assess_hardware_capabilities, load_dataset_config, setup_directories
+from yolo_training_utils import (
+    assess_hardware_capabilities, load_dataset_config, setup_directories,
+    validate_cuda_setup, monitor_gpu, verify_checksum,
+    validate_path_is_absolute, validate_training_config,
+    log_environment_info, cleanup_downloads, monitor_memory
+)
 from torch.optim.lr_scheduler import OneCycleLR
 from pycocotools.coco import COCO
 from tqdm import tqdm
@@ -34,6 +39,9 @@ from download_utils import download_model_weights, download_coco_subset
 from coco_utils import validate_coco_structure, diagnose_coco_dataset, convert_coco_to_yolo, check_coco_dataset
 from remove_prefix import remove_lp_prefix
 from augmentations import get_transforms
+from validation_utils import (
+    validate_training_prerequisites, verify_dataset_structure, validate_image_paths
+)
 
 
 # Constants for dataset validation
@@ -439,25 +447,6 @@ def validate_dataset_contents(data_dir: str) -> None:
         if missing_images:
             logger.warning(f"Labels without images in {split}: {missing_images}")
 
-def cleanup_downloads():
-    """Clean up downloaded files after processing"""
-    try:
-        # Only remove zip files, keep processed data
-        for file in os.listdir('./data'):
-            if file.startswith('coco_') and file.endswith('.zip'):
-                zip_path = os.path.join('./data', file)
-                if os.path.exists(zip_path):
-                    logger.info(f"Removing downloaded zip: {file}")
-                    os.remove(zip_path)
-    except Exception as e:
-        logger.warning(f"Error cleaning up downloads: {e}")
-
-def monitor_memory():
-    """Monitor memory usage during training"""
-    process = psutil.Process(os.getpid())
-    memory_gb = process.memory_info().rss / 1024 / 1024 / 1024
-    logger.info(f"Current memory usage: {memory_gb:.2f} GB")
-
 def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict, force_new: bool = False) -> dict:
     """
     Setup checkpoint resuming logic with proper validation.
@@ -590,181 +579,6 @@ def verify_checkpoint(checkpoint_path: str, is_model_weights: bool = False) -> b
     except Exception as e:
         logger.error(f"Error verifying checkpoint {checkpoint_path}: {e}")
         return False
-
-def validate_training_prerequisites(combined_dir: str, checkpoint_dir: str, export_dir: str, l_model_path: str, s_model_path: str):
-    """Validate all prerequisites before training"""
-    logger.info("Validating training prerequisites...")
-    
-    # Check dataset paths
-    if not os.path.exists(combined_dir):
-        raise RuntimeError(f"Dataset directory not found: {combined_dir}")
-    
-    # Validate model weights with is_model_weights=True
-    if not verify_checkpoint(l_model_path, is_model_weights=True):
-        logger.warning(f"YOLO-NAS-L weights not found or invalid, attempting to download...")
-        if not download_model_weights('YOLO_NAS_L', l_model_path):
-            raise RuntimeError("Failed to obtain valid YOLO-NAS-L weights")
-            
-    if not verify_checkpoint(s_model_path, is_model_weights=True):
-        logger.warning(f"YOLO-NAS-S weights not found or invalid, attempting to download...")
-        if not download_model_weights('YOLO_NAS_S', s_model_path):
-            raise RuntimeError("Failed to obtain valid YOLO-NAS-S weights")
-    
-    # Check write permissions
-    for dir_path in [checkpoint_dir, export_dir]:
-        if not os.access(dir_path, os.W_OK):
-            raise PermissionError(f"No write permission for directory: {dir_path}")
-    
-    logger.success("✓ All prerequisites validated")
-
-def validate_paths(*paths: str) -> None:
-    """Validate that all paths are absolute"""
-    for path in paths:
-        if not os.path.isabs(path):
-            raise ValueError(f"Path must be absolute: {path}")
-
-def validate_cuda_setup() -> None:
-    """Validate CUDA setup and provide recommendations"""
-    if not torch.cuda.is_available():
-        logger.warning("CUDA is not available - training will be slow!")
-        return
-        
-    # Check CUDA version
-    cuda_version = torch.version.cuda
-    if cuda_version is None:
-        logger.warning("CUDA version could not be determined")
-    else:
-        logger.info(f"CUDA version: {cuda_version}")
-        
-    # Check available GPU memory
-    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-    logger.info(f"Available GPU memory: {gpu_memory:.2f} GB")
-    
-    # Set optimal CUDA settings
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-
-def monitor_gpu():
-    """Monitor GPU temperature and utilization"""
-    if torch.cuda.is_available():
-        try:
-            import pynvml
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            logger.info(f"GPU Temperature: {temp}°C, Utilization: {util.gpu}%")
-        except Exception as e:
-            logger.warning(f"Could not monitor GPU metrics: {e}")
-
-def verify_checksum(file_path: str, expected_hash: str) -> bool:
-    """Verify file checksum"""
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest() == expected_hash
-
-def validate_path_is_absolute(path: str, description: str) -> None:
-    """Validate that a path is absolute and exists"""
-    if not os.path.isabs(path):
-        raise ValueError(f"{description} must be an absolute path. Got: {path}")
-    directory = os.path.dirname(path)
-    if not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
-    if not os.access(directory, os.W_OK):
-        raise PermissionError(f"No write permission for {description} directory: {directory}")
-
-def verify_dataset_structure(data_dir: str) -> None:
-    """Verify complete dataset structure before training"""
-    required_dirs = ['images/train', 'images/val', 'labels/train', 'labels/val']
-    for dir_path in required_dirs:
-        full_path = os.path.join(data_dir, dir_path)
-        if not os.path.exists(full_path):
-            raise RuntimeError(f"Missing required directory: {full_path}")
-        if not os.listdir(full_path):
-            raise RuntimeError(f"Empty directory: {full_path}")
-
-def validate_training_config(train_params: dict) -> None:
-    """Validate training configuration parameters"""
-    required_keys = ['resume', 'loss', 'metric_to_watch',
-                    'valid_metrics_list', 'max_epochs', 'initial_lr']
-    for key in required_keys:
-        if key not in train_params:
-            raise ValueError(f"Missing required training parameter: {key}")
-            
-    # Validate numeric parameters
-    if train_params['initial_lr'] <= 0:
-        raise ValueError("Learning rate must be positive")
-    if train_params['max_epochs'] <= 0:
-        raise ValueError("Number of epochs must be positive")
-
-def log_environment_info():
-    """Log environment and library versions"""
-    import sys
-    import super_gradients
-    
-    logger.info("=== Environment Information ===")
-    logger.info(f"Python version: {sys.version}")
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"CUDA available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        logger.info(f"CUDA version: {torch.version.cuda}")
-        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-    logger.info(f"SuperGradients version: {super_gradients.__version__}")
-    logger.info("===========================")
-
-def validate_image_paths(data_dir: str) -> None:
-    """Validate that all image files referenced in labels exist"""
-    logger.info("Validating image paths...")
-    
-    for split in ['train', 'val']:
-        images_dir = os.path.join(data_dir, f'images/{split}')
-        labels_dir = os.path.join(data_dir, f'labels/{split}')
-        
-        # Get all image files
-        image_files = {f.lower() for f in os.listdir(images_dir) 
-                      if f.endswith(('.jpg', '.jpeg', '.png'))}
-        
-        missing_images = []
-        
-        # Check each label file's corresponding image
-        for label_file in os.listdir(labels_dir):
-            if not label_file.endswith('.txt'):
-                continue
-                
-            # Get base name without extension
-            base_name = os.path.splitext(label_file)[0]
-            
-            # Check for image with different extensions
-            image_found = False
-            for ext in ['.jpg', '.jpeg', '.png']:
-                possible_image = f"{base_name}{ext}".lower()
-                if possible_image in image_files:
-                    image_found = True
-                    # Verify file is actually readable
-                    img_path = os.path.join(images_dir, possible_image)
-                    try:
-                        with open(img_path, 'rb') as f:
-                            # Try to read first few bytes
-                            f.read(1024)
-                    except Exception as e:
-                        logger.error(f"Cannot read image file {img_path}: {e}")
-                        missing_images.append(possible_image)
-                    break
-            
-            if not image_found:
-                missing_images.append(f"{base_name}.*")
-        
-        if missing_images:
-            raise RuntimeError(
-                f"Missing or unreadable images in {split} split:\n" + 
-                "\n".join(missing_images[:10]) +
-                f"\n... and {len(missing_images) - 10} more" if len(missing_images) > 10 else ""
-            )
-        
-        logger.success(f"✓ All {len(image_files)} images in {split} split are valid and readable")
 
 def main():
     try:
