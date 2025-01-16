@@ -13,6 +13,7 @@ import random
 import cv2
 import torch.multiprocessing as mp
 import numpy as np
+import super_gradients
 
 from super_gradients.training import Trainer, models
 from super_gradients.common.object_names import Models
@@ -215,8 +216,9 @@ def main():
         
         validate_cuda_setup()
         
-        # Check GPU availability
+        # Setup device using super_gradients
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        super_gradients.setup_device(device=device)
         logger.info(f"Using device: {device}")
         
         if device == "cpu":
@@ -483,8 +485,7 @@ def main():
         # Initialize trainer first
         trainer = Trainer(
             experiment_name='coco_license_plate_detection',
-            ckpt_root_dir=os.path.abspath(checkpoint_dir),
-            device=device
+            ckpt_root_dir=os.path.abspath(checkpoint_dir)
         )
 
         # Then initialize wandb
@@ -580,7 +581,13 @@ def main():
         if args.skip_lp_checks:
             logger.warning("License plate checks are disabled. Assuming all files are properly prepared.")
         
-        # Pass training_params to the train() method instead
+        # Update train_params with device settings
+        train_params.update({
+            'accelerator': device,
+            'device': device,
+        })
+
+        # Pass training_params to the train() method
         trainer.train(
             model=model,
             training_params=train_params,  # Pass training_params here
