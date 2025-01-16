@@ -27,7 +27,8 @@ from yolo_training_utils import (
     assess_hardware_capabilities, load_dataset_config, setup_directories,
     validate_cuda_setup, monitor_gpu, verify_checksum,
     validate_path_is_absolute, validate_training_config,
-    log_environment_info, cleanup_downloads, monitor_memory
+    log_environment_info, cleanup_downloads, monitor_memory,
+    verify_checkpoint
 )
 from torch.optim.lr_scheduler import OneCycleLR
 from pycocotools.coco import COCO
@@ -537,49 +538,6 @@ def setup_checkpoint_resuming(checkpoint_dir: str, train_params: dict, force_new
     
     return train_params
     
-def verify_checkpoint(checkpoint_path: str, is_model_weights: bool = False) -> bool:
-    """
-    Verify checkpoint file is valid and contains required data
-    
-    Args:
-        checkpoint_path: Path to checkpoint file
-        is_model_weights: If True, validates as model weights file instead of training checkpoint
-    """
-    try:
-        if not os.path.exists(checkpoint_path):
-            return False
-            
-        # Check file size
-        if os.path.getsize(checkpoint_path) < 1000:  # Arbitrary minimum size
-            logger.warning(f"Checkpoint file too small: {checkpoint_path}")
-            return False
-            
-        # Try loading the checkpoint
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        
-        if is_model_weights:
-            # For model weights, just verify it's a valid state dict
-            if not isinstance(checkpoint, dict):
-                logger.warning(f"Invalid model weights format in {checkpoint_path}")
-                return False
-            return True
-        else:
-            # For training checkpoints, check for required keys
-            required_keys = ['net', 'epoch', 'optimizer_state_dict']
-            if not all(key in checkpoint for key in required_keys):
-                logger.warning(f"Checkpoint missing required keys: {checkpoint_path}")
-                return False
-                
-            # Verify model state dict
-            if not isinstance(checkpoint['net'], dict):
-                logger.warning("Invalid model state dict in checkpoint")
-                return False
-                
-            return True
-    except Exception as e:
-        logger.error(f"Error verifying checkpoint {checkpoint_path}: {e}")
-        return False
-
 def main():
     try:
         # Parse command line arguments

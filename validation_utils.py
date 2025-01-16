@@ -4,6 +4,7 @@ import coloredlogs
 import torch
 from typing import Optional
 from download_utils import download_model_weights
+from yolo_training_utils import verify_checkpoint
 
 def setup_logging():
     """Setup logging with colored output for terminal and file output"""
