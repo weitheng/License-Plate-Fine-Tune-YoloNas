@@ -458,11 +458,6 @@ def main():
             num_classes=81,
             reg_max=16,
             iou_loss_weight=2.0,  # Reduced from 3.0
-            loss_weight={
-                'class': 1.0,
-                'iou': 2.0,
-                'dfl': 0.5  # Reduced from 1.0
-            },
             center_sampling_radius=1.5,
             eps=1e-7  # Added small epsilon to prevent division by zero
         )
@@ -499,6 +494,11 @@ def main():
             'loss': loss_fn,
             'criterion_params': {
                 'label_smoothing': 0.05  # Reduced from 0.1 for stability
+            },
+            'loss_params': {
+                'class_loss_weight': 1.0,
+                'iou_loss_weight': 2.0,
+                'dfl_loss_weight': 0.5
             },
             'train_metrics_list': [
                 DetectionMetrics_050(
