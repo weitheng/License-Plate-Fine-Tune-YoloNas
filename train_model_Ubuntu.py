@@ -516,20 +516,22 @@ def main():
             'optimizer': 'AdamW',
             'optimizer_params': {
                 'weight_decay': config.weight_decay,
-                'betas': (0.9, 0.999),
+                'betas': (0.937, 0.999),
                 'eps': 1e-8,
-                'lr': config.initial_lr,  # Explicit learning rate
-                'amsgrad': True  # Enable AMS-Grad variant
+                'lr': config.initial_lr,
+                'amsgrad': True
             },
             'zero_weight_decay_on_bias_and_bn': True,  # Important for AdamW
             'lr_mode': 'cosine',
             'lr_warmup_epochs': config.warmup_epochs,
-            'warmup_initial_lr': config.initial_lr * config.warmup_initial_lr_factor,
+            'warmup_initial_lr': config.initial_lr * 0.1,
             'initial_lr': {
-                'backbone': config.initial_lr * config.backbone_lr_factor,
+                'backbone': config.initial_lr * 0.1,
                 'default': config.initial_lr
             },
             'lr_cooldown_epochs': config.lr_cooldown_epochs,
+            'min_lr': config.min_lr,
+            'max_grad_norm': config.max_grad_norm,
             'multiply_head_lr': config.head_lr_factor,
             'ema': True,
             'ema_params': {
@@ -540,7 +542,7 @@ def main():
             'sync_bn': False,  # Disable if using single GPU
             'save_ckpt_epoch_list': [1, 2, 5, 10, 20, 50],
             'phase_callbacks': [
-                GradientMonitorCallback(),
+                GradientMonitorCallback(logging_frequency=50, max_grad_norm=config.max_grad_norm),
                 GPUMonitorCallback(),
                 GradientClippingCallback(clip_value=config.gradient_clip_val),
                 LRMonitorCallback()

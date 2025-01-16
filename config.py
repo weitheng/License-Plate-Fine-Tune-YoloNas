@@ -24,8 +24,8 @@ class TrainingConfig:
     num_epochs: int = 100
     batch_size: int = 32
     input_size: tuple = (640, 640)
-    initial_lr: float = 5e-4
-    warmup_epochs: int = 5  # Increased from 3
+    initial_lr: float = 1e-4
+    warmup_epochs: int = 10
     num_workers: int = 8
     
     # Model parameters
@@ -35,7 +35,7 @@ class TrainingConfig:
     
     # Training parameters
     early_stopping_patience: int = 10
-    weight_decay: float = 1e-4
+    weight_decay: float = 5e-4
     dropout: float = 0.1
     label_smoothing: float = 0.1
     
@@ -44,19 +44,24 @@ class TrainingConfig:
     nesterov: bool = True
     
     # Learning rate parameters
-    warmup_initial_lr_factor: float = 0.001  # Initial LR will be initial_lr * this factor
+    warmup_initial_lr_factor: float = 0.1  # Initial LR will be initial_lr * this factor
     backbone_lr_factor: float = 0.05  # Backbone LR will be initial_lr * this factor
     head_lr_factor: float = 0.1  # Head LR will be initial_lr * this factor
     lr_cooldown_epochs: int = 15
     
     # Advanced training parameters
-    gradient_clip_val: float = 0.1
+    gradient_clip_val: float = 1.0
     clip_grad_norm: float = 0.5
-    batch_accumulate: int = 4
-    ema_decay: float = 0.999
+    batch_accumulate: int = 8
+    ema_decay: float = 0.9997
     
     # Export parameters
     export_image_size: tuple = (320, 320)
+    
+    # Add new stability parameters
+    min_lr: float = 1e-6
+    max_grad_norm: float = 10.0
+    warmup_momentum: float = 0.8
     
     def validate(self):
         """Validate configuration parameters"""
@@ -98,26 +103,20 @@ class TrainingConfig:
         
         # Adjust parameters based on GPU memory
         if gpu_memory_gb > 20:  # High-end GPU
-            config.initial_lr = 5e-4
-            config.input_size = (640, 640)
-            config.warmup_epochs = 5
-            config.batch_accumulate = 4
-            config.max_predictions = 300
-            config.export_image_size = (640, 640)
-        elif gpu_memory_gb < 8:  # Low-end GPU
             config.initial_lr = 1e-4
-            config.input_size = (416, 416)
-            config.warmup_epochs = 3
+            config.input_size = (640, 640)
+            config.warmup_epochs = 10
             config.batch_accumulate = 8
+        elif gpu_memory_gb < 8:  # Low-end GPU
+            config.initial_lr = 5e-5
+            config.input_size = (416, 416)
+            config.warmup_epochs = 15
+            config.batch_accumulate = 16
             config.batch_size = max(2, config.batch_size // 2)
-            config.max_predictions = 200
-            config.export_image_size = (416, 416)
         else:  # Mid-range GPU
-            config.initial_lr = 3e-4
+            config.initial_lr = 8e-5
             config.input_size = (512, 512)
-            config.warmup_epochs = 4
-            config.batch_accumulate = 6
-            config.max_predictions = 250
-            config.export_image_size = (512, 512)
+            config.warmup_epochs = 12
+            config.batch_accumulate = 12
             
         return config.validate()
