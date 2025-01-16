@@ -10,6 +10,7 @@ import sys
 import super_gradients
 from super_gradients.training.utils.callbacks import PhaseCallback, Phase
 import time
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -416,16 +417,49 @@ def check_batch_device(dataloader, name=""):
         logger.error(f"Error checking {name} batch device: {e}")
 
 class GradientMonitorCallback(PhaseCallback):
-    """Callback to monitor gradient norms during training"""
-    def __init__(self):
-        super().__init__(phase=Phase.TRAIN_BATCH_END)
-        
-    def __call__(self, context):
-        if context.batch_idx % 100 == 0:  # Log every 100 batches
-            total_norm = 0
-            for p in context.model.parameters():
-                if p.grad is not None:
-                    param_norm = p.grad.data.norm(2)
-                    total_norm += param_norm.item() ** 2
-            total_norm = total_norm ** (1. / 2)
-            logger.info(f"Gradient norm at batch {context.batch_idx}: {total_norm:.4f}")
+    """Monitor gradients during training"""
+    def __init__(self, logging_frequency: int = 100):
+        super().__init__(phase=Phase.TRAIN_BATCH_STEP)
+        self.logging_frequency = logging_frequency
+        self.batch_counter = 0
+        self.logger = logging.getLogger(__name__)
+
+    def __call__(self, context: PhaseContext):
+        """Called during training to monitor gradients"""
+        try:
+            self.batch_counter += 1
+            if self.batch_counter % self.logging_frequency == 0:
+                # Access model through trainer's net attribute
+                if hasattr(context.trainer, 'net'):
+                    model = context.trainer.net
+                    total_norm = 0.0
+                    param_count = 0
+                    
+                    for p in model.parameters():
+                        if p.grad is not None:
+                            param_norm = p.grad.data.norm(2)
+                            total_norm += param_norm.item() ** 2
+                            param_count += 1
+                    
+                    if param_count > 0:
+                        total_norm = total_norm ** 0.5
+                        avg_norm = total_norm / param_count
+                        
+                        self.logger.info(
+                            f"Batch {self.batch_counter}: "
+                            f"Average gradient norm: {avg_norm:.5f}, "
+                            f"Total norm: {total_norm:.5f}"
+                        )
+                        
+                        # Log to wandb if available
+                        if wandb.run is not None:
+                            wandb.log({
+                                'gradient/average_norm': avg_norm,
+                                'gradient/total_norm': total_norm
+                            })
+                else:
+                    self.logger.warning("Model not accessible in callback context")
+                    
+        except Exception as e:
+            self.logger.error(f"Error in gradient monitoring: {str(e)}")
+            self.logger.debug("Error details:", exc_info=True)
