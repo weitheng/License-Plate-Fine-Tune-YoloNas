@@ -263,6 +263,12 @@ class DetectionWeatherEffects(DetectionTransform):
                 image = (image * 255).astype(np.uint8)
             
             h, w = image.shape[:2]
+            
+            # Ensure minimum dimensions for chunking
+            min_chunk_size = 32  # Minimum chunk size
+            num_chunks = max(1, min(4, h // min_chunk_size))  # At most 4 chunks, at least 1
+            chunk_size = max(min_chunk_size, h // num_chunks)
+            
             # Use smaller data type for rain drops to reduce memory
             rain_drops = (np.random.random((h, w)) < self.rain_intensity).astype(np.uint8)
             streak_length = min(15, random.randint(10, 20))  # Limit max streak length
@@ -271,29 +277,33 @@ class DetectionWeatherEffects(DetectionTransform):
             # Use uint8 instead of bool for rain_layer
             rain_layer = np.zeros((h, w), dtype=np.uint8)
             
-            # Process in smaller chunks to reduce memory usage
-            chunk_size = h // 4
+            # Process in chunks with size validation
             for chunk_start in range(0, h, chunk_size):
                 chunk_end = min(chunk_start + chunk_size, h)
+                if chunk_end <= chunk_start:
+                    continue  # Skip invalid chunks
+                    
                 chunk = rain_drops[chunk_start:chunk_end, :]
                 for i in range(streak_length):
                     shifted = np.roll(chunk, i)
-                    rain_layer[chunk_start:chunk_end] |= (
-                        ndimage.rotate(shifted, angle, reshape=False) > 0.5
-                    ).astype(np.uint8)
+                    rotated = ndimage.rotate(shifted, angle, reshape=False)
+                    rain_layer[chunk_start:chunk_end] |= (rotated > 0.5).astype(np.uint8)
             
             # Apply rain effect more efficiently
             brightness = np.random.uniform(0.8, 1.2)
             rain_effect = image.copy()
-            rain_effect[rain_layer > 0] = np.minimum(
-                rain_effect[rain_layer > 0] * brightness, 
-                255
-            ).astype(np.uint8)
+            rain_mask = rain_layer > 0
+            if rain_mask.any():  # Only apply effect if there are rain pixels
+                rain_effect[rain_mask] = np.minimum(
+                    rain_effect[rain_mask] * brightness, 
+                    255
+                ).astype(np.uint8)
             
             return cv2.GaussianBlur(rain_effect, (3, 3), 0)
             
         except Exception as e:
             logger.error(f"Error in rain effect application: {str(e)}")
+            logger.error(f"Image shape: {image.shape if image is not None else 'None'}")
             return image
 
     def add_fog(self, image):
