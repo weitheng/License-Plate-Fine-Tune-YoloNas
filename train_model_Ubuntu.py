@@ -457,9 +457,7 @@ def main():
             use_static_assigner=True,  # Changed to True for more stability
             num_classes=81,
             reg_max=16,
-            iou_loss_weight=2.0,  # Reduced from 3.0
-            center_sampling_radius=1.5,
-            eps=1e-7  # Added small epsilon to prevent division by zero
+            iou_loss_weight=2.0  # Reduced from 3.0
         )
         if torch.cuda.is_available():
             loss_fn = loss_fn.cuda()
@@ -493,7 +491,8 @@ def main():
             'mixed_precision': True,
             'loss': loss_fn,
             'criterion_params': {
-                'label_smoothing': 0.05  # Reduced from 0.1 for stability
+                'label_smoothing': 0.05,  # Reduced from 0.1 for stability
+                'eps': 1e-7  # Add epsilon through criterion params
             },
             'loss_params': {
                 'class_loss_weight': 1.0,
