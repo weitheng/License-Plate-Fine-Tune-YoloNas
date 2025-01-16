@@ -199,6 +199,21 @@ def create_initial_transforms(dataset_config, input_size):
         skip_mosaic=True  # Add this parameter
     )
 
+def check_batch_device(dataloader, name=""):
+    try:
+        batch = next(iter(dataloader))
+        if isinstance(batch, (tuple, list)):
+            sample = batch[0]
+        else:
+            sample = batch
+            
+        if torch.is_tensor(sample):
+            logger.info(f"{name} batch device: {sample.device}")
+            if torch.cuda.is_available() and not sample.is_cuda:
+                logger.warning(f"{name} data is not on GPU!")
+    except Exception as e:
+        logger.error(f"Error checking {name} batch device: {e}")
+
 def main():
     try:
         # Set multiprocessing start method first
@@ -373,11 +388,25 @@ def main():
             model = models.get(Models.YOLO_NAS_S, 
                              num_classes=81,
                              pretrained_weights="coco")
+            
+            # Explicitly move model to GPU if available
+            if torch.cuda.is_available():
+                model = model.cuda()
+                logger.info("Model moved to GPU")
+            
+            # Verify model device
+            logger.info(f"Model device: {next(model.parameters()).device}")
             logger.success("✓ Model initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize model: {e}")
             raise RuntimeError("Model initialization failed") from e
         
+        # After model initialization
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()  # Ensure all CUDA operations are completed
+            logger.info(f"Initial GPU memory allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB")
+            logger.info(f"Initial GPU memory cached: {torch.cuda.memory_reserved()/1e9:.2f} GB")
+
         # Define loss function
         loss_fn = PPYoloELoss(
             use_static_assigner=False,
@@ -385,6 +414,9 @@ def main():
             reg_max=16,
             iou_loss_weight=3.0
         )
+        if torch.cuda.is_available():
+            loss_fn = loss_fn.cuda()
+            logger.info("Loss function moved to GPU")
 
         # Get GPU memory if available
         gpu_memory_gb = 0
@@ -694,6 +726,19 @@ def main():
 
         # Finish wandb session
         wandb.finish()
+
+        # After creating both dataloaders
+        if torch.cuda.is_available():
+            check_batch_device(train_data, "Training")
+            check_batch_device(val_data, "Validation")
+
+        # After creating validation dataloader
+        if hasattr(val_data.dataset, 'set_processing_params'):
+            val_data.dataset.set_processing_params(
+                input_dim=config.input_size,
+                normalize=True,
+                device=device
+            )
 
     except Exception as e:
         logger.error(f"Error during training: {e}")
