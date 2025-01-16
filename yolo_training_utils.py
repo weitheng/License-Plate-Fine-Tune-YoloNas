@@ -3,7 +3,6 @@ import multiprocessing
 import psutil
 import torch
 import yaml
-import hashlib
 import pynvml
 from typing import Tuple, Dict, Any, Optional
 import logging
@@ -113,14 +112,6 @@ def monitor_gpu():
             logger.info(f"GPU Temperature: {temp}°C, Utilization: {util.gpu}%")
         except Exception as e:
             logger.warning(f"Could not monitor GPU metrics: {e}")
-
-def verify_checksum(file_path: str, expected_hash: str) -> bool:
-    """Verify file checksum"""
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest() == expected_hash
 
 def validate_path_is_absolute(path: str, description: str) -> None:
     """Validate that a path is absolute and exists"""
