@@ -424,3 +424,18 @@ def create_initial_transforms(dataset_config, input_size):
         dataloader=None,
         skip_mosaic=True
     )
+
+class GradientMonitorCallback(PhaseCallback):
+    """Callback to monitor gradient norms during training"""
+    def __init__(self):
+        super().__init__(phase=Phase.TRAIN_BATCH_END)
+        
+    def __call__(self, context):
+        if context.batch_idx % 100 == 0:  # Log every 100 batches
+            total_norm = 0
+            for p in context.model.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            total_norm = total_norm ** (1. / 2)
+            logger.info(f"Gradient norm at batch {context.batch_idx}: {total_norm:.4f}")

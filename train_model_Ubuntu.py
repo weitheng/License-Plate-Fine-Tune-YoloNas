@@ -33,7 +33,7 @@ from yolo_training_utils import (
     validate_path_is_absolute, validate_training_config,
     log_environment_info, cleanup_downloads, monitor_memory,
     verify_checkpoint, GPUMonitorCallback, pin_memory,
-    check_batch_device, create_initial_transforms
+    check_batch_device, create_initial_transforms, GradientMonitorCallback
 )
 from torch.optim.lr_scheduler import OneCycleLR
 from typing import Optional, List, Dict, Any, Tuple
