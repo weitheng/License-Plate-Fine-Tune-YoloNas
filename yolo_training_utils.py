@@ -19,9 +19,9 @@ def assess_hardware_capabilities() -> Dict[str, int]:
         Dict containing recommended num_workers and batch_size based on hardware
     """
     try:
-        # Get CPU cores (physical cores * 0.25 for conservative performance)
+        # Get CPU cores (physical cores * 0.2 for conservative performance)
         cpu_cores = multiprocessing.cpu_count()
-        recommended_workers = max(1, int(cpu_cores * 0.25))
+        recommended_workers = max(1, int(cpu_cores * 0.2))
 
         # Get available GPU memory
         if torch.cuda.is_available():
@@ -44,7 +44,7 @@ def assess_hardware_capabilities() -> Dict[str, int]:
             elif gpu_memory < 16:
                 recommended_batch_size = 16
             elif gpu_memory < 24:
-                recommended_batch_size = 18 #decreased from 24 to 18
+                recommended_batch_size = 16 #decreased from 24 to 16
             else:
                 recommended_batch_size = 32
                 

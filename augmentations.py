@@ -513,10 +513,15 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
     # Clear CUDA cache before validation
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()  # Ensure all CUDA operations are complete
     
     transforms = [
         ImageShapeCorrection(),
-        SafeDetectionPaddedRescale(input_dim=input_size, pad_value=114),
+        SafeDetectionPaddedRescale(
+            input_dim=input_size,
+            pad_value=114,
+            max_targets=100  # Limit maximum targets
+        ),
         DetectionStandardize(max_value=255.0)
     ]
     logger.info("  - Added shape correction, rescale and standardization")
@@ -527,3 +532,22 @@ def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_train
     if is_training:
         return create_train_transforms(config, input_size)
     return create_val_transforms(input_size)
+
+class SafeValidationBatch:
+    """Wrapper to safely process validation batches"""
+    @staticmethod
+    def process_batch(batch):
+        try:
+            if torch.cuda.is_available():
+                # Ensure tensors are contiguous in memory
+                if isinstance(batch, (tuple, list)):
+                    batch = [b.contiguous() if torch.is_tensor(b) else b for b in batch]
+                elif torch.is_tensor(batch):
+                    batch = batch.contiguous()
+                
+                # Clear cache before processing
+                torch.cuda.empty_cache()
+            return batch
+        except Exception as e:
+            logger.error(f"Error processing validation batch: {e}")
+            return None

@@ -5,6 +5,7 @@ from tqdm import tqdm
 import shutil
 import torch
 import gc
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,69 @@ EXPECTED_COCO_TRAIN = 85000
 EXPECTED_COCO_VAL = 5000
 EXPECTED_TOTAL_TRAIN = EXPECTED_COCO_TRAIN + EXPECTED_LP_TRAIN  # 85000 + 25470 = 110470
 EXPECTED_TOTAL_VAL = EXPECTED_COCO_VAL + EXPECTED_LP_VAL  # 5000 + 1073 = 6073
+
+def fix_case_sensitivity(combined_dir: str) -> None:
+    """
+    Fix case sensitivity issues in the combined dataset directory
+    by converting all filenames to lowercase.
+    """
+    try:
+        combined_dir = os.path.abspath(combined_dir)
+        if not os.path.exists(combined_dir):
+            raise FileNotFoundError(f"Combined directory not found: {combined_dir}")
+
+        # Process both train and val splits
+        for split in ['train', 'val']:
+            # Process both images and labels
+            for data_type in ['images', 'labels']:
+                directory = os.path.join(combined_dir, data_type, split)
+                if not os.path.exists(directory):
+                    logger.warning(f"Directory not found: {directory}")
+                    continue
+
+                logger.info(f"Processing {data_type} in {split} split...")
+                files_processed = 0
+
+                # Get all files in directory
+                files = os.listdir(directory)
+
+                for filename in files:
+                    old_path = os.path.join(directory, filename)
+                    new_filename = filename.lower()  # Convert to lowercase
+                    new_path = os.path.join(directory, new_filename)
+
+                    # Skip if filename is already lowercase
+                    if filename == new_filename:
+                        continue
+
+                    try:
+                        # If the destination file already exists, handle it
+                        if os.path.exists(new_path) and new_path != old_path:
+                            # Compare file sizes to see if they're the same file
+                            if os.path.getsize(old_path) == os.path.getsize(new_path):
+                                os.remove(old_path)  # Remove the uppercase version
+                                logger.info(f"Removed duplicate file: {filename}")
+                                continue
+                            else:
+                                # If sizes differ, keep both but rename the new one
+                                base, ext = os.path.splitext(new_filename)
+                                new_path = os.path.join(directory, f"{base}_2{ext}")
+
+                        # Rename the file
+                        os.rename(old_path, new_path)
+                        files_processed += 1
+                        logger.info(f"Renamed: {filename} -> {os.path.basename(new_path)}")
+
+                    except Exception as e:
+                        logger.error(f"Error processing {filename}: {str(e)}")
+                        continue
+
+                if files_processed > 0:
+                    logger.info(f"Processed {files_processed} files in {data_type}/{split}")
+
+    except Exception as e:
+        logger.error(f"Error fixing case sensitivity: {str(e)}")
+        raise
 
 def validate_final_dataset(combined_dir: str, skip_lp_checks: bool = False) -> Dict[str, Dict[str, int]]:
     """
@@ -284,6 +348,10 @@ def prepare_combined_dataset() -> None:
 
         # After copying completes, verify the final state
         try:
+            # Fix case sensitivity issues before final verification
+            logger.info("Checking for case sensitivity issues...")
+            fix_case_sensitivity(combined_dir)
+
             final_train_lp = len([f for f in os.listdir(os.path.join(combined_dir, 'images/train')) 
                                 if f.startswith('lp_')])
             final_val_lp = len([f for f in os.listdir(os.path.join(combined_dir, 'images/val')) 
