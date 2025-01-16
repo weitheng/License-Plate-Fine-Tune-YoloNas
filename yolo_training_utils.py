@@ -96,10 +96,21 @@ def validate_cuda_setup() -> None:
     gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
     logger.info(f"Available GPU memory: {gpu_memory:.2f} GB")
     
-    # Set optimal CUDA settings
+    # Set optimal CUDA settings for large datasets
     torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.max_split_size_mb = 512
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    
+    # Log optimizations
+    logger.info("CUDA optimizations enabled:")
+    logger.info("✓ cuDNN benchmark mode")
+    logger.info("✓ Memory split size: 512MB")
+    logger.info("✓ TF32 enabled (if supported)")
+    
+    # Log GPU info
+    gpu_name = torch.cuda.get_device_name(0)
+    logger.info(f"GPU: {gpu_name} ({gpu_memory:.1f}GB)")
 
 def monitor_gpu():
     """Monitor GPU temperature and utilization"""

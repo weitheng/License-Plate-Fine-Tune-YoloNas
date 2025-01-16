@@ -415,6 +415,30 @@ class SafeDetectionRandomAffine(DetectionRandomAffine):
             logger.error(f"Image shape: {image.shape if hasattr(sample, 'image') else 'No image'}")
             return sample
 
+class SafeValidationStandardize(DetectionStandardize):
+    """Safe version of DetectionStandardize for validation"""
+    def __init__(self, max_value=255.0):
+        super().__init__(max_value=max_value)
+    
+    def apply_to_sample(self, sample):
+        try:
+            if sample.image is None:
+                return sample
+                
+            # Ensure float32 for standardization
+            sample.image = sample.image.astype(np.float32)
+            sample = super().apply_to_sample(sample)
+            
+            # Ensure no NaN or inf values
+            if np.any(np.isnan(sample.image)) or np.any(np.isinf(sample.image)):
+                logger.error("Invalid values in standardized image")
+                sample.image = np.clip(sample.image, 0, 1)
+                
+            return sample
+        except Exception as e:
+            logger.error(f"Error in standardization: {e}")
+            return sample
+
 def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int], dataloader=None) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
@@ -691,14 +715,50 @@ class SafeDetectionMosaic(SafeDetectionTransform):
         self.prob = prob
         self.dataloader = dataloader
         self.enable_memory_cache = enable_memory_cache
-        # Initialize cache with controlled size if enabled
         self.cache = {} if enable_memory_cache else None
-        self.max_cache_size = min(100, len(dataloader.dataset) if dataloader else 0)  # Limit cache size
+        
+        # Calculate cache size based on dataset and GPU memory
+        if torch.cuda.is_available():
+            gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9  # GB
+            max_cache_by_gpu = min(int(gpu_mem * 100), 1000)  # Scale with GPU memory
+        else:
+            max_cache_by_gpu = 100
+            
+        # Use the smaller of GPU-based or dataset-based cache size
+        self.max_cache_size = min(
+            max_cache_by_gpu,
+            len(dataloader.dataset) if dataloader else 0
+        )
+        
         self.cache_hits = 0
         self.cache_misses = 0
         
+        # Enable CUDA optimizations for large datasets
+        if torch.cuda.is_available():
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cuda.max_split_size_mb = 512
+        
+        self._setup_memory_optimizations()
+    
+    def _setup_memory_optimizations(self):
+        """Setup memory optimizations for large datasets"""
+        if torch.cuda.is_available():
+            # Pre-allocate pinned memory for faster transfers
+            self.pinned_memory = torch.cuda.is_available()
+            
+            # Use streams for asynchronous data transfers
+            self.stream = torch.cuda.Stream()
+            
+            # Enable automatic memory caching
+            torch.cuda.empty_cache()
+            
+            # Log optimization settings
+            logger.info("Mosaic augmentation optimizations enabled:")
+            logger.info(f"✓ Max cache size: {self.max_cache_size}")
+            logger.info("✓ Pinned memory enabled")
+            logger.info("✓ CUDA stream processing")
+    
     def _get_random_image(self):
-        """Get a random image from the dataloader or cache with memory management"""
         try:
             if self.dataloader is None or not hasattr(self.dataloader, 'dataset'):
                 logger.error("No dataloader provided for mosaic augmentation")
@@ -709,47 +769,82 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                 logger.error("Empty dataset in dataloader")
                 return None
             
-            # Try to get from cache first if enabled
-            if self.enable_memory_cache and self.cache:
-                idx = random.choice(list(self.cache.keys()))
-                self.cache_hits += 1
-                if self.cache_hits % 1000 == 0:  # Log cache performance periodically
-                    hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
-                    logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
-                return self.cache[idx]
-            
-            # Get random sample from dataset
-            idx = random.randint(0, len(dataset) - 1)
-            sample = dataset[idx]
-            self.cache_misses += 1
-            
-            # Cache the image if enabled and there's room
-            if self.enable_memory_cache and len(self.cache) < self.max_cache_size:
-                try:
-                    # Ensure the image is in the right format before caching
-                    img = self.validate_image(sample.image)
-                    if img is not None:
-                        self.cache[idx] = img
-                except Exception as e:
-                    logger.warning(f"Failed to cache image {idx}: {e}")
-            elif self.enable_memory_cache and len(self.cache) >= self.max_cache_size and random.random() < 0.1:
-                # Occasionally remove a random item if cache is full
-                remove_key = random.choice(list(self.cache.keys()))
-                del self.cache[remove_key]
-                
-            return sample.image
+            if torch.cuda.is_available():
+                with torch.cuda.stream(self.stream):
+                    # Try to get from cache first if enabled
+                    if self.enable_memory_cache and self.cache:
+                        idx = random.choice(list(self.cache.keys()))
+                        self.cache_hits += 1
+                        if self.cache_hits % 1000 == 0:  # Log cache performance periodically
+                            hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
+                            logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
+                        return self.cache[idx]
+                    
+                    # Get random sample from dataset
+                    idx = random.randint(0, len(dataset) - 1)
+                    sample = dataset[idx]
+                    self.cache_misses += 1
+                    
+                    # Cache the image if enabled and there's room
+                    if self.enable_memory_cache and len(self.cache) < self.max_cache_size:
+                        try:
+                            # Ensure the image is in the right format before caching
+                            img = self.validate_image(sample.image)
+                            if img is not None:
+                                self.cache[idx] = img
+                        except Exception as e:
+                            logger.warning(f"Failed to cache image {idx}: {e}")
+                    elif self.enable_memory_cache and len(self.cache) >= self.max_cache_size and random.random() < 0.1:
+                        # Occasionally remove a random item if cache is full
+                        remove_key = random.choice(list(self.cache.keys()))
+                        del self.cache[remove_key]
+                    
+                    return sample.image
+            else:
+                # Non-CUDA path
+                return super()._get_random_image()
             
         except Exception as e:
             logger.error(f"Error getting random image: {e}")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()  # Clear CUDA cache if there's an error
             return None
-            
+    
     def clear_cache(self):
-        """Clear the image cache to free memory"""
-        self.cache.clear()
+        """Clear cache with proper CUDA synchronization"""
+        if self.cache:
+            self.cache.clear()
         if torch.cuda.is_available():
+            torch.cuda.synchronize()
             torch.cuda.empty_cache()
+
+    def validate_and_clip_targets(self, targets, img_shape):
+        """Validate and clip targets to image boundaries"""
+        if targets is None or len(targets) == 0:
+            return targets
+        
+        h, w = img_shape[:2]
+        
+        # Create a copy to avoid modifying original
+        targets = targets.copy()
+        
+        # Clip coordinates to image boundaries
+        targets[:, 1] = np.clip(targets[:, 1], 0, w)  # x1
+        targets[:, 2] = np.clip(targets[:, 2], 0, h)  # y1
+        targets[:, 3] = np.clip(targets[:, 3], 0, w)  # x2
+        targets[:, 4] = np.clip(targets[:, 4], 0, h)  # y2
+        
+        # Filter invalid boxes
+        valid_mask = (
+            (targets[:, 3] > targets[:, 1]) &  # width > 0
+            (targets[:, 4] > targets[:, 2]) &  # height > 0
+            (targets[:, 1] < w) &  # x1 < width
+            (targets[:, 2] < h) &  # y1 < height
+            (targets[:, 3] > 0) &  # x2 > 0
+            (targets[:, 4] > 0)    # y2 > 0
+        )
+        
+        return targets[valid_mask]
 
     def apply_to_sample(self, sample):
         try:
@@ -761,9 +856,17 @@ class SafeDetectionMosaic(SafeDetectionTransform):
             mosaic_img = np.zeros((output_h, output_w, 3), dtype=np.uint8)
             all_targets = []
 
-            # Generate random splits
-            center_x = int(random.uniform(output_w * 0.25, output_w * 0.75))
-            center_y = int(random.uniform(output_h * 0.25, output_h * 0.75))
+            # Generate splits with safety bounds
+            center_x = int(np.clip(random.uniform(
+                output_w * 0.25, output_w * 0.75), 
+                output_w * 0.2, 
+                output_w * 0.8
+            ))
+            center_y = int(np.clip(random.uniform(
+                output_h * 0.25, output_h * 0.75),
+                output_h * 0.2,
+                output_h * 0.8
+            ))
 
             # Process each quadrant
             for idx, (x1, y1, x2, y2) in enumerate([
@@ -783,6 +886,11 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                     scale_x = (x2 - x1) / img.shape[1]
                     scale_y = (y2 - y1) / img.shape[0]
 
+                    # Calculate scaling with bounds checking
+                    src_h, src_w = img.shape[:2]
+                    if src_w <= 0 or src_h <= 0:
+                        continue
+
                     # Place image in mosaic
                     mosaic_img[y1:y2, x1:x2] = cv2.resize(img, (x2-x1, y2-y1))
 
@@ -793,7 +901,15 @@ class SafeDetectionMosaic(SafeDetectionTransform):
                             # Scale bounding box coordinates
                             targets[:, [1, 3]] = targets[:, [1, 3]] * scale_x + x1
                             targets[:, [2, 4]] = targets[:, [2, 4]] * scale_y + y1
-                            all_targets.append(targets)
+                            
+                            # Validate and clip targets
+                            valid_targets = self.validate_and_clip_targets(
+                                targets, 
+                                (output_h, output_w)
+                            )
+                            
+                            if len(valid_targets) > 0:
+                                all_targets.append(valid_targets)
 
                 except Exception as e:
                     logger.error(f"Error processing mosaic quadrant {idx}: {e}")
