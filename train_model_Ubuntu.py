@@ -1,9 +1,8 @@
 import os
-# Disable all automatic logging and crash handlers
-os.environ['CRASH_HANDLER'] = 'FALSE'
-os.environ['DISABLE_SG_LOGGER'] = 'TRUE'
+# Disable SuperGradients console logging
 os.environ['CONSOLE_LOG_LEVEL'] = 'WARNING'
 os.environ['DISABLE_CONSOLE_LOG'] = 'TRUE'
+os.environ['DISABLE_SG_LOGGER'] = 'TRUE'
 
 import torch
 import wandb
@@ -141,26 +140,30 @@ def worker_init_fn(worker_id):
 
 def create_dataloader_with_memory_management(dataset_params, dataloader_params, is_training=True):
     """Create dataloader with memory management"""
-    if torch.cuda.is_available():
-        # Use more conservative settings
-        dataloader_params.update({
-            'num_workers': 2,  # Use minimal workers
-            'pin_memory': True,
-            'persistent_workers': False,
-            'prefetch_factor': 1,  # Reduce prefetch to minimum
-            'timeout': 300,  # Increase timeout
-            'multiprocessing_context': 'spawn',
-            'worker_init_fn': worker_init_fn
-        })
-    else:
-        # CPU settings
-        dataloader_params.update({
-            'num_workers': 0,  # No workers for CPU
-            'pin_memory': False,
-            'persistent_workers': False
-        })
-
     try:
+        logger.info(f"Creating {'training' if is_training else 'validation'} dataloader...")
+        logger.info(f"Dataset params: {dataset_params}")
+        logger.info(f"Dataloader params: {dataloader_params}")
+        
+        if torch.cuda.is_available():
+            # Use more conservative settings
+            dataloader_params.update({
+                'num_workers': 2,  # Use minimal workers
+                'pin_memory': True,
+                'persistent_workers': True,  # Changed to True
+                'prefetch_factor': 2,
+                'timeout': 300,
+                'multiprocessing_context': 'spawn',
+                'worker_init_fn': worker_init_fn
+            })
+        else:
+            # CPU settings
+            dataloader_params.update({
+                'num_workers': 0,
+                'pin_memory': False,
+                'persistent_workers': False
+            })
+
         # Create the dataloader with error handling
         dataloader = (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
             dataset_params=dataset_params,
@@ -169,16 +172,20 @@ def create_dataloader_with_memory_management(dataset_params, dataloader_params, 
         
         # Verify the dataloader
         try:
+            logger.info("Testing dataloader...")
             # Test the dataloader with a single batch
             next(iter(dataloader))
             logger.info(f"{'Training' if is_training else 'Validation'} dataloader initialized successfully")
+            logger.info(f"Dataloader length: {len(dataloader)}")
+            return dataloader
         except Exception as e:
             logger.error(f"Failed to load first batch: {e}")
+            logger.error("Dataloader verification failed", exc_info=True)
             raise
             
-        return dataloader
     except Exception as e:
         logger.error(f"Error creating dataloader: {e}")
+        logger.error("Dataloader creation failed", exc_info=True)
         raise
 
 # First, create a function to initialize transforms without mosaic
@@ -598,13 +605,48 @@ def main():
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
         
-        # Pass training_params to the train() method
-        trainer.train(
-            model=model,
-            training_params=train_params,
-            train_loader=train_data,
-            valid_loader=val_data
-        )
+        # Before trainer.train()
+        try:
+            logger.info("Initializing training...")
+            
+            # Verify model is on correct device
+            logger.info(f"Model device: {next(model.parameters()).device}")
+            logger.info(f"Using device: {device}")
+            
+            # Verify dataloaders
+            logger.info(f"Training dataloader length: {len(train_data)}")
+            logger.info(f"Validation dataloader length: {len(val_data)}")
+            
+            # Log training parameters
+            logger.info("Training parameters:")
+            for key, value in train_params.items():
+                if isinstance(value, (int, float, str, bool)):
+                    logger.info(f"  {key}: {value}")
+            
+            # Clear CUDA cache before training
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                logger.info(f"GPU memory allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB")
+                logger.info(f"GPU memory cached: {torch.cuda.memory_reserved()/1e9:.2f} GB")
+            
+            # Verify trainer state
+            logger.info(f"Trainer device: {trainer.device}")
+            logger.info("Starting training...")
+            
+            # Pass training_params to the train() method
+            trainer.train(
+                model=model,
+                training_params=train_params,
+                train_loader=train_data,
+                valid_loader=val_data
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to start training: {e}")
+            logger.error("Training initialization failed", exc_info=True)
+            raise
+
         # After training
         monitor_memory()
         
