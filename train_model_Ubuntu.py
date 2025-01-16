@@ -114,6 +114,37 @@ def parse_args():
                        help='Start training from scratch instead of resuming from checkpoint')
     return parser.parse_args()
 
+def create_dataloader_with_memory_management(dataset_params, dataloader_params, is_training=True):
+    """Create dataloader with memory management"""
+    if torch.cuda.is_available():
+        # Calculate safe batch size based on available memory
+        total_memory = torch.cuda.get_device_properties(0).total_memory
+        available_memory = total_memory - torch.cuda.memory_allocated()
+        
+        # Estimate memory per sample (adjust these values based on your model)
+        estimated_memory_per_sample = 500 * 1024 * 1024  # 500MB per sample
+        max_safe_batch_size = max(1, int(available_memory / estimated_memory_per_sample))
+        
+        # Update batch size if needed
+        dataloader_params['batch_size'] = min(
+            dataloader_params['batch_size'],
+            max_safe_batch_size
+        )
+        
+        # Enable pinned memory for faster transfer
+        dataloader_params['pin_memory'] = True
+        
+        # Adjust num_workers based on CPU cores and memory
+        dataloader_params['num_workers'] = min(
+            dataloader_params['num_workers'],
+            os.cpu_count() or 1
+        )
+    
+    return (coco_detection_yolo_format_train if is_training else coco_detection_yolo_format_val)(
+        dataset_params=dataset_params,
+        dataloader_params=dataloader_params
+    )
+
 def main():
     try:
         # Parse command line arguments
@@ -354,40 +385,53 @@ def main():
             'optimizer_params': {'weight_decay': config.weight_decay}
         }
 
-        # Update dataloader params with absolute paths
-        train_data = coco_detection_yolo_format_train(
+        # Create base dataloader first
+        train_data = create_dataloader_with_memory_management(
             dataset_params={
-                'data_dir': combined_dir,  # Using absolute path to combined dataset
+                'data_dir': combined_dir,
                 'images_dir': 'images/train',
                 'labels_dir': 'labels/train',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
-                'transforms': get_transforms(dataset_config, config.input_size, is_training=True)
+                'transforms': []  # Start with empty transforms
             },
             dataloader_params={
-                'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
-                'num_workers': hw_params['num_workers'],  # Use hardware-assessed workers config.num_workers,
+                'batch_size': hw_params['batch_size'],
+                'num_workers': hw_params['num_workers'],
                 'shuffle': True,
                 'pin_memory': torch.cuda.is_available(),
                 'drop_last': True
             }
         )
 
-        val_data = coco_detection_yolo_format_val(
+        # Create transforms with dataloader
+        transforms = get_transforms(
+            dataset_config, 
+            config.input_size, 
+            is_training=True,
+            dataloader=train_data
+        )
+
+        # Update dataloader with transforms
+        train_data.dataset.transforms = transforms
+
+        val_data = create_dataloader_with_memory_management(
             dataset_params={
                 'data_dir': combined_dir,  # Using absolute path to combined dataset
                 'images_dir': 'images/val',
                 'labels_dir': 'labels/val',
                 'classes': dataset_config['names'],
                 'input_dim': config.input_size,
-                'transforms': get_transforms(dataset_config, config.input_size, is_training=False)
+                'transforms': get_transforms(dataset_config, config.input_size, is_training=False),
+                'max_targets': 100  # Limit maximum targets per image
             },
             dataloader_params={
-                'batch_size': hw_params['batch_size'],  # Use hardware-assessed batch size config.batch_size,
-                'num_workers': hw_params['num_workers'],  # Use hardware-assessed workers config.num_workers,
+                'batch_size': max(1, hw_params['batch_size'] // 2),  # Reduce validation batch size
+                'num_workers': max(1, hw_params['num_workers'] // 2),  # Reduce validation workers
                 'shuffle': False,
                 'pin_memory': torch.cuda.is_available(),
-                'drop_last': False
+                'drop_last': False,
+                'persistent_workers': False  # Disable persistent workers for validation
             }
         )
 

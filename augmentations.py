@@ -415,7 +415,7 @@ class SafeDetectionRandomAffine(DetectionRandomAffine):
             logger.error(f"Image shape: {image.shape if hasattr(sample, 'image') else 'No image'}")
             return sample
 
-def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int]) -> List[DetectionTransform]:
+def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int], dataset=None) -> List[DetectionTransform]:
     """Create training transforms based on config."""
     validate_aug_config(config)
     transforms = []
@@ -423,12 +423,19 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
     
     logger.info("Setting up training augmentations:")
     
-    # Always start with shape correction and rescale to ensure consistent size
-    transforms.append(ImageShapeCorrection())
-    transforms.append(SafeDetectionPaddedRescale(
-        input_dim=input_size,
-        pad_value=114
-    ))
+    # Memory management for CUDA
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        
+    # Base transforms with target validation
+    transforms.extend([
+        ImageShapeCorrection(),
+        SafeDetectionPaddedRescale(
+            input_dim=input_size,
+            pad_value=114,
+            max_targets=100
+        )
+    ])
     logger.info(f"  - Added shape correction and rescale to {input_size}")
     
     # Add HSV augmentation
@@ -441,26 +448,29 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         ))
         logger.info("  - Safe HSV augmentation")
     
-    # Add Mosaic augmentation
-    if aug_config.get('mosaic', {}).get('enabled', False):
-        transforms.append(DetectionMosaic(
-            input_dim=input_size,
-            prob=aug_config['mosaic'].get('p', 0.5)
-        ))
-        # Add rescale after mosaic to ensure consistent size
-        transforms.append(SafeDetectionPaddedRescale(
-            input_dim=input_size,
-            pad_value=114
-        ))
-        logger.info("  - Mosaic augmentation with rescale")
-    
     # Basic augmentations
     if aug_config.get('horizontal_flip', {}).get('enabled', False):
         p = aug_config['horizontal_flip'].get('p', 0.5)
         transforms.append(DetectionTargetsFormatTransform())
         logger.info(f"  - Horizontal Flip (p={p})")
     
-    # Add random affine with safe version
+    # Mosaic with safety checks
+    if aug_config.get('mosaic', {}).get('enabled', False):
+        transforms.append(SafeDetectionMosaic(
+            input_dim=input_size,
+            prob=aug_config['mosaic'].get('p', 0.5),
+            dataloader=dataset,  # Pass the dataloader
+            enable_memory_cache=True
+        ))
+        # Ensure consistent size after mosaic
+        transforms.append(SafeDetectionPaddedRescale(
+            input_dim=input_size,
+            pad_value=114,
+            max_targets=100
+        ))
+        logger.info("  - Mosaic augmentation with rescale")
+    
+    # Safe affine transform
     if aug_config.get('affine', {}).get('enabled', False):
         if not aug_config.get('mosaic', {}).get('enabled', False):
             transforms.append(SafeDetectionRandomAffine(
@@ -470,8 +480,8 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
                 target_size=input_size
             ))
             logger.info("  - Safe random affine")
-
-    # Add new CCTV-specific augmentations
+    
+    # Add CCTV-specific augmentations
     if aug_config.get('motion_blur', {}).get('enabled', False):
         transforms.append(DetectionMotionBlur(
             kernel_size=aug_config['motion_blur'].get('kernel_size', 7),
@@ -479,6 +489,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             prob=aug_config['motion_blur'].get('p', 0.3)
         ))
         logger.info("  - Motion blur augmentation")
+    
     if aug_config.get('noise', {}).get('enabled', False):
         transforms.append(DetectionNoise(
             mean=aug_config['noise'].get('mean', 0.0),
@@ -486,6 +497,7 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
             prob=aug_config['noise'].get('p', 0.3)
         ))
         logger.info("  - Noise augmentation")
+    
     if aug_config.get('weather', {}).get('enabled', False):
         transforms.append(DetectionWeatherEffects(
             rain_intensity=aug_config['weather'].get('rain_intensity', 0.2),
@@ -494,14 +506,15 @@ def create_train_transforms(config: Dict[str, Any], input_size: Tuple[int, int])
         ))
         logger.info("  - Weather effects augmentation")
     
-    # Final rescale to ensure consistent size
-    transforms.append(SafeDetectionPaddedRescale(
-        input_dim=input_size,
-        pad_value=114
-    ))
-    
-    # Standardization
-    transforms.append(DetectionStandardize(max_value=255.0))
+    # Final validation and standardization
+    transforms.extend([
+        SafeDetectionPaddedRescale(
+            input_dim=input_size,
+            pad_value=114,
+            max_targets=100
+        ),
+        SafeValidationStandardize(max_value=255.0)
+    ])
     logger.info("  - Added final rescale and standardization")
     
     return transforms
@@ -584,8 +597,7 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
         SafeValidationRescale(
             input_dim=input_size,
             pad_value=114,
-            max_targets=100,  # Limit maximum targets
-            allow_up_sampling=False  # Prevent up-sampling during validation
+            max_targets=100  # Limit maximum targets
         ),
         SafeValidationStandardize(max_value=255.0)
     ]
@@ -593,10 +605,10 @@ def create_val_transforms(input_size: Tuple[int, int]) -> List[DetectionTransfor
     logger.info("  - Added safe validation transforms with additional checks")
     return transforms
 
-def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True) -> List[DetectionTransform]:
+def get_transforms(config: Dict[str, Any], input_size: Tuple[int, int], is_training: bool = True, dataloader=None) -> List[DetectionTransform]:
     """Get transforms based on whether it's training or validation."""
     if is_training:
-        return create_train_transforms(config, input_size)
+        return create_train_transforms(config, input_size, dataloader=dataloader)
     return create_val_transforms(input_size)
 
 class SafeValidationBatch:
@@ -617,3 +629,183 @@ class SafeValidationBatch:
         except Exception as e:
             logger.error(f"Error processing validation batch: {e}")
             return None
+
+class SafeDetectionTransform(DetectionTransform):
+    """Base class for safe detection transforms with target validation"""
+    def validate_targets(self, sample, image_shape):
+        """Validate and clean targets to ensure they're within image bounds"""
+        try:
+            if not hasattr(sample, 'target') or sample.target is None:
+                return sample
+                
+            h, w = image_shape[:2]
+            valid_mask = (
+                (sample.target[:, 1] >= 0) &  # x1
+                (sample.target[:, 2] >= 0) &  # y1
+                (sample.target[:, 3] <= w) &  # x2
+                (sample.target[:, 4] <= h) &  # y2
+                (sample.target[:, 3] > sample.target[:, 1]) &  # width > 0
+                (sample.target[:, 4] > sample.target[:, 2])    # height > 0
+            )
+            
+            if not valid_mask.all():
+                logger.warning(f"Filtered {(~valid_mask).sum()} invalid targets")
+                sample.target = sample.target[valid_mask]
+                
+            return sample
+        except Exception as e:
+            logger.error(f"Error validating targets: {e}")
+            return sample
+
+    def validate_image(self, image):
+        """Validate and normalize image format"""
+        try:
+            if image is None:
+                raise ValueError("Empty image")
+                
+            # Convert to numpy if tensor
+            if torch.is_tensor(image):
+                image = image.cpu().numpy()
+            
+            # Ensure HWC format
+            if len(image.shape) == 3 and image.shape[0] == 3:
+                image = np.transpose(image, (1, 2, 0))
+            
+            # Ensure uint8 format
+            if image.dtype != np.uint8:
+                if image.max() <= 1.0:
+                    image = (image * 255).astype(np.uint8)
+                else:
+                    image = image.astype(np.uint8)
+            
+            return image
+        except Exception as e:
+            logger.error(f"Error validating image: {e}")
+            return None
+
+class SafeDetectionMosaic(SafeDetectionTransform):
+    """Safe mosaic augmentation with target validation and memory management"""
+    def __init__(self, input_dim, prob=0.5, dataloader=None):
+        super().__init__()
+        self.input_dim = input_dim
+        self.prob = prob
+        self.dataloader = dataloader
+        # Initialize cache with controlled size
+        self.cache = {}
+        self.max_cache_size = min(100, len(dataloader.dataset) if dataloader else 0)  # Limit cache size
+        self.cache_hits = 0
+        self.cache_misses = 0
+        
+    def _get_random_image(self):
+        """Get a random image from the dataloader or cache with memory management"""
+        try:
+            if self.dataloader is None or not hasattr(self.dataloader, 'dataset'):
+                logger.error("No dataloader provided for mosaic augmentation")
+                return None
+                
+            dataset = self.dataloader.dataset
+            if len(dataset) == 0:
+                logger.error("Empty dataset in dataloader")
+                return None
+            
+            # Try to get from cache first
+            if self.cache:
+                idx = random.choice(list(self.cache.keys()))
+                self.cache_hits += 1
+                if self.cache_hits % 1000 == 0:  # Log cache performance periodically
+                    hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses)
+                    logger.info(f"Mosaic cache hit rate: {hit_rate:.2%}")
+                return self.cache[idx]
+            
+            # Get random sample from dataset
+            idx = random.randint(0, len(dataset) - 1)
+            sample = dataset[idx]
+            self.cache_misses += 1
+            
+            # Cache the image if there's room
+            if len(self.cache) < self.max_cache_size:
+                try:
+                    # Ensure the image is in the right format before caching
+                    img = self.validate_image(sample.image)
+                    if img is not None:
+                        self.cache[idx] = img
+                except Exception as e:
+                    logger.warning(f"Failed to cache image {idx}: {e}")
+            elif len(self.cache) >= self.max_cache_size and random.random() < 0.1:
+                # Occasionally remove a random item if cache is full
+                remove_key = random.choice(list(self.cache.keys()))
+                del self.cache[remove_key]
+                
+            return sample.image
+            
+        except Exception as e:
+            logger.error(f"Error getting random image: {e}")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Clear CUDA cache if there's an error
+            return None
+            
+    def clear_cache(self):
+        """Clear the image cache to free memory"""
+        self.cache.clear()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def apply_to_sample(self, sample):
+        try:
+            if random.random() >= self.prob:
+                return sample
+
+            # Pre-allocate output arrays
+            output_h, output_w = self.input_dim
+            mosaic_img = np.zeros((output_h, output_w, 3), dtype=np.uint8)
+            all_targets = []
+
+            # Generate random splits
+            center_x = int(random.uniform(output_w * 0.25, output_w * 0.75))
+            center_y = int(random.uniform(output_h * 0.25, output_h * 0.75))
+
+            # Process each quadrant
+            for idx, (x1, y1, x2, y2) in enumerate([
+                (0, 0, center_x, center_y),                     # top-left
+                (center_x, 0, output_w, center_y),             # top-right
+                (0, center_y, center_x, output_h),             # bottom-left
+                (center_x, center_y, output_w, output_h)       # bottom-right
+            ]):
+                try:
+                    # Get and validate image for this quadrant
+                    img = self.validate_image(sample.image if idx == 0 else 
+                                           self._get_random_image())
+                    if img is None:
+                        continue
+
+                    # Calculate scaling factors
+                    scale_x = (x2 - x1) / img.shape[1]
+                    scale_y = (y2 - y1) / img.shape[0]
+
+                    # Place image in mosaic
+                    mosaic_img[y1:y2, x1:x2] = cv2.resize(img, (x2-x1, y2-y1))
+
+                    # Transform targets
+                    if hasattr(sample, 'target') and sample.target is not None:
+                        targets = sample.target.copy()
+                        if len(targets):
+                            # Scale bounding box coordinates
+                            targets[:, [1, 3]] = targets[:, [1, 3]] * scale_x + x1
+                            targets[:, [2, 4]] = targets[:, [2, 4]] * scale_y + y1
+                            all_targets.append(targets)
+
+                except Exception as e:
+                    logger.error(f"Error processing mosaic quadrant {idx}: {e}")
+                    continue
+
+            # Combine and validate targets
+            if all_targets:
+                sample.target = np.concatenate(all_targets, axis=0)
+                sample = self.validate_targets(sample, mosaic_img.shape)
+
+            sample.image = mosaic_img
+            return sample
+
+        except Exception as e:
+            logger.error(f"Error in mosaic augmentation: {e}")
+            return sample
