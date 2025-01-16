@@ -326,20 +326,6 @@ def main():
                     f"expected {EXPECTED_TOTAL_VAL}"
                 )
 
-        # Initialize wandb first with specific settings
-        try:
-            logger.info("Initializing Weights & Biases...")
-            wandb.init(
-                project="license-plate-detection",
-                name="yolo-nas-s-coco-finetuning",
-                config=train_params,
-                resume=True if os.path.exists(checkpoint_path) else False
-            )
-            logger.info("✓ Weights & Biases initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize wandb: {e}")
-            raise
-
         # Load dataset configuration
         logger.info("Loading dataset configuration...")
         dataset_config = load_dataset_config(yaml_path)
@@ -466,7 +452,42 @@ def main():
             },
         }
 
-        # Create base dataloader first
+        # Check for existing checkpoint
+        checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'latest_checkpoint.pth'))
+        
+        # Verify the checkpoint directory exists and is writable
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir, exist_ok=True)
+        if not os.access(checkpoint_dir, os.W_OK):
+            raise PermissionError(f"No write permission for checkpoint directory: {checkpoint_dir}")
+
+        # Initialize wandb after train_params is defined
+        try:
+            logger.info("Initializing Weights & Biases...")
+            wandb.init(
+                project="license-plate-detection",
+                name="yolo-nas-s-coco-finetuning",
+                config=train_params,
+                resume=True if os.path.exists(checkpoint_path) else False
+            )
+            logger.info("✓ Weights & Biases initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize wandb: {e}")
+            raise
+
+        # Initialize training parameters with checkpoint handling
+        try:
+            logger.info("Checking for existing checkpoints...")
+            train_params = setup_checkpoint_resuming(checkpoint_dir, train_params, force_new=args.no_resume)
+        except Exception as e:
+            logger.error(f"Error setting up checkpoint resuming: {e}")
+            logger.warning("Starting training from scratch")
+            train_params.update({
+                'resume': False,
+                'resume_path': None
+            })
+
+        # Create dataloaders after train_params is defined
         train_data = create_dataloader_with_memory_management(
             dataset_params={
                 'data_dir': combined_dir,
@@ -484,17 +505,6 @@ def main():
                 'drop_last': True
             }
         )
-
-        # Create transforms with dataloader
-        transforms = get_transforms(
-            dataset_config, 
-            config.input_size, 
-            is_training=True,
-            dataloader=train_data
-        )
-
-        # Update dataloader with transforms
-        train_data.dataset.transforms = transforms
 
         val_data = create_dataloader_with_memory_management(
             dataset_params={
@@ -516,26 +526,16 @@ def main():
             }
         )
 
-        # Check for existing checkpoint
-        checkpoint_path = os.path.abspath(os.path.join(checkpoint_dir, 'latest_checkpoint.pth'))
-        
-        # Verify the checkpoint directory exists and is writable
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir, exist_ok=True)
-        if not os.access(checkpoint_dir, os.W_OK):
-            raise PermissionError(f"No write permission for checkpoint directory: {checkpoint_dir}")
-            
-        # Initialize training parameters with checkpoint handling
-        try:
-            logger.info("Checking for existing checkpoints...")
-            train_params = setup_checkpoint_resuming(checkpoint_dir, train_params, force_new=args.no_resume)
-        except Exception as e:
-            logger.error(f"Error setting up checkpoint resuming: {e}")
-            logger.warning("Starting training from scratch")
-            train_params.update({
-                'resume': False,
-                'resume_path': None
-            })
+        # Create transforms with dataloader
+        transforms = get_transforms(
+            dataset_config, 
+            config.input_size, 
+            is_training=True,
+            dataloader=train_data
+        )
+
+        # Update dataloader with transforms
+        train_data.dataset.transforms = transforms
 
         # Initialize trainer with explicit absolute paths
         trainer = Trainer(
